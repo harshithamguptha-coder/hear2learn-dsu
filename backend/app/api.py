@@ -8,10 +8,12 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from .auth_api import require_teacher
 from .database import get_db
 from .models import (
     ConversationDetailResponse,
     ConversationMessageResponse,
+    LectureCreate,
     LectureQARequest,
     LectureQAResponse,
     SessionResponse,
@@ -20,7 +22,7 @@ from .models import (
     TranscriptResponse,
     TranscriptStructureRequest,
 )
-from .services import session_service
+from .services import attendance_service, session_service
 from .services.ai_structuring import AIStructuringError, ai_structuring_service
 from .services.realtime import EventHub
 
@@ -40,12 +42,27 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.post("/lectures", response_model=SessionResponse, status_code=201)
+def create_authenticated_lecture(
+    payload: LectureCreate,
+    teacher: dict = Depends(require_teacher),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Create a persistent lecture linked to the logged-in Teacher."""
+    return session_service.create_session(
+        db,
+        teacher_id=teacher["id"],
+        title=payload.title,
+    )
+
+
 @router.post(
     "/sessions",
     response_model=SessionResponse,
     status_code=201,
 )
 def create_session(db: sqlite3.Connection = Depends(get_db)) -> dict:
+    """Backward-compatible public foundation endpoint for existing clients."""
     return session_service.create_session(db)
 
 
@@ -75,13 +92,24 @@ async def end_session(
         transcript = session_service.list_transcript(db, session_id)
         notes_service.generate_and_save(db, session_id, transcript)
         session = session_service.end_session(db, session_id)
+        attendance_service.close_lecture_attendance(
+            db,
+            session_id=session_id,
+            left_at=session["end_time"] or session["ended_at"],
+        )
         await event_hub.publish(
             session_id,
             {"event": "session_ended", "session_id": session_id},
         )
         return session
 
-    return session_service.end_session(db, session_id)
+    session = session_service.end_session(db, session_id)
+    attendance_service.close_lecture_attendance(
+        db,
+        session_id=session_id,
+        left_at=session["end_time"] or session["ended_at"],
+    )
+    return session
 
 
 @router.get(

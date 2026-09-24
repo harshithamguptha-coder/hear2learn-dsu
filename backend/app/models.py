@@ -8,11 +8,47 @@ from pydantic import BaseModel, Field
 LanguageCode = Literal["en", "kn", "hi", "te"]
 
 
+UserRole = Literal["teacher", "student"]
+
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    role: UserRole
+
+
+class UserLogin(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: UserRole
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    user: UserResponse
+
+
+class LectureCreate(BaseModel):
+    title: str = Field(default="Untitled Lecture", min_length=1, max_length=200)
+
+
 class SessionResponse(BaseModel):
     session_id: str
     status: Literal["active", "ended"]
     started_at: str
     ended_at: str | None = None
+    teacher_id: int | None = None
+    title: str = "Untitled Lecture"
+    start_time: str | None = None
+    end_time: str | None = None
 
 
 class TranscriptCreate(BaseModel):
@@ -129,3 +165,25 @@ class LectureNotesResponse(BaseModel):
     important_terms: list[str]
     message: str | None = None
     created_at: str
+
+
+AttendanceStatus = Literal["in_progress", "attended"]
+
+
+class LectureAttendanceResponse(BaseModel):
+    id: int
+    student_id: int
+    session_id: str
+    joined_at: str
+    left_at: str | None = None
+
+
+class MyLectureResponse(BaseModel):
+    session_id: str
+    title: str
+    teacher: str
+    lecture_date: str
+    joined_at: str
+    left_at: str | None = None
+    duration_seconds: int
+    status: AttendanceStatus

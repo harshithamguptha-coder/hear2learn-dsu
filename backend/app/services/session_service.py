@@ -11,17 +11,26 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_session(db: sqlite3.Connection) -> dict:
-    """Create an active lecture with a short, URL-safe, unique ID."""
+def create_session(
+    db: sqlite3.Connection,
+    *,
+    teacher_id: int | None = None,
+    title: str = "Untitled Lecture",
+) -> dict:
+    """Create a unique lecture ID and optionally link it to its Teacher."""
     for _ in range(5):
         session_id = secrets.token_hex(8).upper()
+        started_at = now_iso()
         try:
             db.execute(
                 """
-                INSERT INTO sessions (session_id, status, started_at)
-                VALUES (?, 'active', ?)
+                INSERT INTO sessions (
+                    session_id, teacher_id, title, start_time,
+                    status, started_at
+                )
+                VALUES (?, ?, ?, ?, 'active', ?)
                 """,
-                (session_id, now_iso()),
+                (session_id, teacher_id, title.strip() or "Untitled Lecture", started_at, started_at),
             )
             db.commit()
         except sqlite3.IntegrityError:
@@ -41,7 +50,8 @@ def find_session(
 ) -> dict | None:
     row = db.execute(
         """
-        SELECT session_id, status, started_at, ended_at
+        SELECT session_id, teacher_id, title, start_time, end_time,
+               status, started_at, ended_at
         FROM sessions
         WHERE session_id = ?
         """,
@@ -59,10 +69,12 @@ def end_session(
     cursor = db.execute(
         """
         UPDATE sessions
-        SET status = 'ended', ended_at = COALESCE(ended_at, ?)
+        SET status = 'ended',
+            end_time = COALESCE(end_time, ?),
+            ended_at = COALESCE(ended_at, ?)
         WHERE session_id = ?
         """,
-        (ended_at, session_id),
+        (ended_at, ended_at, session_id),
     )
     db.commit()
     if cursor.rowcount == 0:

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { createSession, endSession, saveTranscript } from '../api/client'
+import { createLecture, endSession, saveTranscript } from '../api/client'
 import TranscriptView from '../components/TranscriptView'
+import { useAuth } from '../context/AuthContext'
 import { useLectureContext } from '../context/LectureContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
@@ -12,6 +13,7 @@ function mergeItem(current, newItem) {
 }
 
 export default function TeacherPage() {
+  const { user, token } = useAuth()
   const {
     teacherSession: session,
     setTeacherSession: setSession,
@@ -31,6 +33,7 @@ export default function TeacherPage() {
   const [busyAction, setBusyAction] = useState('')
   const [copied, setCopied] = useState(false)
   const [manualText, setManualText] = useState('')
+  const [lectureTitle, setLectureTitle] = useState('Untitled Lecture')
 
   const sessionRef = useRef(session)
   useEffect(() => {
@@ -64,7 +67,7 @@ export default function TeacherPage() {
     setActionError('')
     setCopied(false)
     try {
-      const newSession = await createSession()
+      const newSession = await createLecture(lectureTitle.trim() || 'Untitled Lecture', token)
       console.log('[Teacher] Created new lecture session:', newSession)
       setSession(newSession)
       setTranscript([])
@@ -122,12 +125,23 @@ export default function TeacherPage() {
         <div>
           <p className="eyebrow">Teacher workspace</p>
           <h1>Start a live lecture</h1>
-          <p>Share your session ID, then turn on the microphone and teach normally.</p>
+          <p>Welcome, {user?.name}. Share your session ID, then turn on the microphone and teach normally.</p>
         </div>
         <span className="page-number" aria-hidden="true">01</span>
       </div>
 
       <section className="control-card" aria-label="Lecture controls">
+        <div className="lecture-title-control">
+          <label htmlFor="lecture-title" className="field-label">Lecture title</label>
+          <input
+            id="lecture-title"
+            value={lectureTitle}
+            onChange={(event) => setLectureTitle(event.target.value)}
+            placeholder="For example: Introduction to Python"
+            maxLength={200}
+            disabled={Boolean(busyAction) || session?.status === 'active'}
+          />
+        </div>
         <div className="control-row">
           <button
             className="primary-button"

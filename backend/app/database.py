@@ -30,17 +30,51 @@ def get_db() -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
+def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+
+
+def _migrate_existing_schema(connection: sqlite3.Connection) -> None:
+    """Add account/lecture fields without deleting any existing lecture data."""
+    columns = _column_names(connection, "sessions")
+    migrations = {
+        "teacher_id": "INTEGER",
+        "title": "TEXT",
+        "start_time": "TEXT",
+        "end_time": "TEXT",
+    }
+    for column, definition in migrations.items():
+        if column not in columns:
+            connection.execute(
+                f"ALTER TABLE sessions ADD COLUMN {column} {definition}"
+            )
+
+
 def init_db() -> None:
-    """Create the database file and tables if they do not exist yet."""
+    """Create the database file and migrate its small, compatible schema."""
     connection = connect_db()
     try:
         connection.executescript(
             """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('teacher', 'student')),
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT PRIMARY KEY,
+                teacher_id INTEGER,
+                title TEXT,
+                start_time TEXT,
+                end_time TEXT,
                 status TEXT NOT NULL CHECK (status IN ('active', 'ended')),
                 started_at TEXT NOT NULL,
-                ended_at TEXT
+                ended_at TEXT,
+                FOREIGN KEY (teacher_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS transcripts (
@@ -90,7 +124,35 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_conversation_messages_cid
             ON conversation_messages(conversation_id, id);
+
+            CREATE TABLE IF NOT EXISTS lecture_attendance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                joined_at TEXT NOT NULL,
+                left_at TEXT,
+                UNIQUE(student_id, session_id),
+                FOREIGN KEY (student_id) REFERENCES users(id),
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_lecture_attendance_student
+            ON lecture_attendance(student_id, joined_at DESC);
             """
+
+        )
+        _migrate_existing_schema(connection)
+        connection.execute(
+            "UPDATE sessions SET start_time = started_at WHERE start_time IS NULL"
+        )
+        connection.execute(
+            "UPDATE sessions SET title = 'Untitled Lecture' WHERE title IS NULL"
+        )
+        connection.execute(
+            "UPDATE sessions SET end_time = ended_at WHERE end_time IS NULL"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_teacher_id ON sessions(teacher_id)"
         )
         connection.commit()
     finally:

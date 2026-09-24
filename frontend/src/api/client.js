@@ -1,12 +1,16 @@
 // Keep API calls in one small module so pages do not know URL details.
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
+const TOKEN_KEY = 'accessible-classroom-token'
 
 async function request(path, options = {}) {
+  const { token, ...fetchOptions } = options
+  const authToken = token || localStorage.getItem(TOKEN_KEY)
   const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
+      ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...fetchOptions.headers,
     },
   })
 
@@ -18,6 +22,50 @@ async function request(path, options = {}) {
   }
 
   return response.json()
+}
+
+export function register(payload) {
+  return request('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function login(payload) {
+  return request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getCurrentUser(token) {
+  return request('/auth/me', { token })
+}
+
+export function joinLectureAttendance(sessionId) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/attendance/join`, {
+    method: 'POST',
+  })
+}
+
+export function leaveLectureAttendance(sessionId, token) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/attendance/leave`, {
+    method: 'POST',
+    token,
+    keepalive: true,
+  })
+}
+
+export function getMyLectures() {
+  return request('/my-lectures')
+}
+
+export function createLecture(title, token) {
+  return request('/lectures', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+    token,
+  })
 }
 
 export function createSession() {
