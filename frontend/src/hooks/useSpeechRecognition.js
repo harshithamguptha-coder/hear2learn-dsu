@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const ERROR_MESSAGES = {
-  'audio-capture': 'No microphone was found. Check your microphone settings.',
-  'not-allowed': 'Microphone access was blocked. Allow access and try again.',
-  'network': 'Speech recognition lost its network connection. Please try again.',
-  'service-not-allowed': 'This browser could not start speech recognition.',
-  'language-not-supported': 'This browser does not support the selected speech language.',
+  'audio-capture': 'No microphone was found. Check your system sound input settings.',
+  'not-allowed': 'Microphone access was blocked. Click the lock icon in the address bar to allow microphone access.',
+  'network': 'Speech recognition service network error. If using Edge/Chrome, check your internet.',
+  'service-not-allowed': 'This browser could not start speech recognition service.',
+  'language-not-supported': 'This browser does not support en-US speech recognition.',
 }
 
 function getSpeechRecognition() {
@@ -13,8 +13,6 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null
 }
 
-// The browser captures microphone audio and performs the small STT step.
-// Only finalized text is sent onward; interim words stay local.
 export function useSpeechRecognition(onFinalText) {
   const recognitionRef = useRef(null)
   const callbackRef = useRef(onFinalText)
@@ -29,9 +27,23 @@ export function useSpeechRecognition(onFinalText) {
     callbackRef.current = onFinalText
   }, [onFinalText])
 
-  useEffect(() => {
+  const createAndStart = useCallback(() => {
     const SpeechRecognition = getSpeechRecognition()
-    if (!SpeechRecognition) return undefined
+    if (!SpeechRecognition) return
+
+    // Clean up any lingering previous instance
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onstart = null
+        recognitionRef.current.onresult = null
+        recognitionRef.current.onerror = null
+        recognitionRef.current.onend = null
+        recognitionRef.current.abort()
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null
+    }
 
     const recognition = new SpeechRecognition()
     recognition.continuous = true
@@ -57,16 +69,24 @@ export function useSpeechRecognition(onFinalText) {
       }
 
       setInterimText(interim.trim())
-      if (final.trim()) callbackRef.current(final.trim())
+      if (final.trim()) {
+        callbackRef.current(final.trim())
+      }
     }
 
     recognition.onerror = (event) => {
+      // 'no-speech' happens naturally when the speaker pauses; do not show error or stop
+      if (event.error === 'no-speech') {
+        return
+      }
+
       if (event.error !== 'aborted') {
         setError(
           ERROR_MESSAGES[event.error] ||
-            'Speech recognition stopped unexpectedly. Please try again.',
+            `Speech recognition error: ${event.error}`,
         )
       }
+
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         shouldListenRef.current = false
       }
@@ -77,44 +97,57 @@ export function useSpeechRecognition(onFinalText) {
       setListening(false)
       setInterimText('')
 
-      // Some browsers stop after a short pause. Restart while the teacher
-      // has explicitly kept microphone listening switched on.
       if (shouldListenRef.current) {
         restartTimerRef.current = window.setTimeout(() => {
-          try {
-            recognition.start()
-          } catch {
-            shouldListenRef.current = false
-          }
-        }, 300)
+          if (!shouldListenRef.current) return
+          createAndStart()
+        }, 150)
       }
     }
 
     recognitionRef.current = recognition
-    return () => {
+    try {
+      recognition.start()
+    } catch (err) {
+      setError(`Could not start microphone: ${err.message}`)
       shouldListenRef.current = false
-      window.clearTimeout(restartTimerRef.current)
-      recognition.abort()
-      recognitionRef.current = null
+      setListening(false)
     }
   }, [])
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current || !supported) return
+    if (!supported) return
     setError('')
     shouldListenRef.current = true
-    try {
-      recognition.start()
-    } catch {
-      // Calling start while it is already running is harmless.
-    }
-  }, [supported])
+    createAndStart()
+  }, [supported, createAndStart])
 
   const stopListening = useCallback(() => {
     shouldListenRef.current = false
     window.clearTimeout(restartTimerRef.current)
     setInterimText('')
-    recognitionRef.current?.stop()
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch {
+        // ignore
+      }
+    }
+    setListening(false)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      shouldListenRef.current = false
+      window.clearTimeout(restartTimerRef.current)
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort()
+        } catch {
+          // ignore
+        }
+      }
+    }
   }, [])
 
   return { supported, listening, interimText, error, startListening, stopListening }
