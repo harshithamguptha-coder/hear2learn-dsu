@@ -103,7 +103,11 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
 .primary-button:hover:not(:disabled) { background: var(--blue-dark); }
 .secondary-button { color: var(--navy); background: #fff; border-color: #b8c6da; }
 .secondary-button:hover:not(:disabled) { background: #f3f7fc; }
-.microphone-button { display: inline-flex; align-items: center; gap: 9px; }
+.microphone-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
+.microphone-button.active { color: #fff; background: #176b4b; border-color: #176b4b; }
+.microphone-button.active:hover:not(:disabled) { background: #10563b; }
+.microphone-feedback .message { display: flex; align-items: center; gap: 8px; }
+.message.microphone-on { color: #11633f; background: #dff6eb; border: 1px solid #b5e4cf; font-weight: 750; }
 .mic-dot, .live-label > span, .connection-state > span { width: 9px; height: 9px; border-radius: 50%; background: #7a8799; }
 .mic-dot.active, .live-label > span, .connection-state > span { background: #1d9b63; box-shadow: 0 0 0 4px rgb(29 155 99 / 12%); }
 .session-panel {

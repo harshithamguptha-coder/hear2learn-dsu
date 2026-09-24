@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const ERROR_MESSAGES = {
-  'audio-capture': 'No microphone was found. Check your microphone settings.',
-  'not-allowed': 'Microphone access was blocked. Allow access and try again.',
-  'network': 'Speech recognition lost its network connection. Please try again.',
-  'service-not-allowed': 'This browser could not start speech recognition.',
-  'language-not-supported': 'This browser does not support the selected speech language.',
+const RECOGNITION_ERRORS = {
+  'audio-capture': 'No speech-recognition microphone was found.',
+  'not-allowed': 'Speech recognition is not allowed. Check the browser microphone permission.',
+  'network': 'Speech recognition lost its network connection.',
+  'service-not-allowed': 'The browser blocked the speech-recognition service.',
+  'language-not-supported': 'The browser does not support the selected speech language.',
 }
 
 function getSpeechRecognition() {
@@ -13,109 +13,201 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null
 }
 
-// The browser captures microphone audio and performs the small STT step.
-// Only finalized text is sent onward; interim words stay local.
+function getMicrophoneError(error) {
+  const messages = {
+    AbortError: 'Microphone startup was interrupted. Please try again.',
+    NotAllowedError: 'Microphone permission was denied. Allow access in your browser and try again.',
+    NotFoundError: 'No microphone was found. Connect a microphone and try again.',
+    NotReadableError: 'The microphone is already in use or cannot be read.',
+    OverconstrainedError: 'The selected microphone does not support the requested audio settings.',
+    SecurityError: 'Microphone access was blocked by browser security settings.',
+  }
+  return messages[error?.name] || 'The microphone could not be started. Please try again.'
+}
+
+function stopMediaStream(stream) {
+  stream?.getTracks().forEach((track) => track.stop())
+}
+
+// getUserMedia explicitly acquires and holds microphone permission. Web Speech
+// then provides the fast browser-based STT for the MVP.
 export function useSpeechRecognition(onFinalText) {
   const recognitionRef = useRef(null)
+  const mediaStreamRef = useRef(null)
   const callbackRef = useRef(onFinalText)
   const shouldListenRef = useRef(false)
   const restartTimerRef = useRef(null)
-  const [listening, setListening] = useState(false)
+  const requestIdRef = useRef(0)
+  const [isListening, setIsListening] = useState(false)
+  const [isRequesting, setIsRequesting] = useState(false)
+  const [microphoneOn, setMicrophoneOn] = useState(false)
   const [interimText, setInterimText] = useState('')
   const [error, setError] = useState('')
-  const supported = Boolean(getSpeechRecognition())
+
+  const recognitionSupported = Boolean(getSpeechRecognition())
+  const microphoneSupported =
+    typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia)
+  const supported = recognitionSupported && microphoneSupported
+  const supportError = !microphoneSupported
+    ? 'Microphone access requires a supported browser on HTTPS or localhost.'
+    : !recognitionSupported
+      ? 'This browser does not support Web Speech recognition. Use a current Chrome or Edge browser.'
+      : ''
 
   useEffect(() => {
     callbackRef.current = onFinalText
   }, [onFinalText])
 
-  useEffect(() => {
+  const releaseMicrophone = useCallback(() => {
+    stopMediaStream(mediaStreamRef.current)
+    mediaStreamRef.current = null
+    setMicrophoneOn(false)
+    setIsListening(false)
+  }, [])
+
+  const stopListening = useCallback(() => {
+    shouldListenRef.current = false
+    requestIdRef.current += 1
+    window.clearTimeout(restartTimerRef.current)
+
+    const recognition = recognitionRef.current
+    recognitionRef.current = null
+    try {
+      recognition?.stop()
+    } catch {
+      // Recognition may already be stopped by the browser.
+    }
+
+    setInterimText('')
+    setIsRequesting(false)
+    releaseMicrophone()
+  }, [releaseMicrophone])
+
+  const startListening = useCallback(async () => {
+    if (isRequesting || microphoneOn) return
+
+    if (!supported) {
+      setError(supportError)
+      return
+    }
+
     const SpeechRecognition = getSpeechRecognition()
-    if (!SpeechRecognition) return undefined
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    shouldListenRef.current = true
+    setError('')
+    setIsRequesting(true)
 
-    const recognition = new SpeechRecognition()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (requestId !== requestIdRef.current || !shouldListenRef.current) {
+        stopMediaStream(mediaStream)
+        return
+      }
 
-    recognition.onstart = () => {
-      setError('')
-      setListening(true)
-    }
+      mediaStreamRef.current = mediaStream
+      setMicrophoneOn(true)
 
-    recognition.onresult = (event) => {
-      let interim = ''
-      let final = ''
+      const recognition = new SpeechRecognition()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = 'en-US'
+      recognitionRef.current = recognition
 
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index]
-        if (result.isFinal) {
-          final += result[0].transcript
-        } else {
-          interim += result[0].transcript
+      recognition.onstart = () => {
+        setError('')
+        setIsListening(true)
+      }
+
+      recognition.onresult = (event) => {
+        const finalParts = []
+        const interimParts = []
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index]
+          const text = result[0].transcript.trim()
+          if (!text) continue
+          if (result.isFinal) finalParts.push(text)
+          else interimParts.push(text)
         }
+
+        setInterimText(interimParts.join(' '))
+        const finalText = finalParts.join(' ')
+        if (finalText) callbackRef.current(finalText)
       }
 
-      setInterimText(interim.trim())
-      if (final.trim()) callbackRef.current(final.trim())
-    }
+      recognition.onerror = (event) => {
+        if (event.error === 'aborted' || event.error === 'no-speech') return
 
-    recognition.onerror = (event) => {
-      if (event.error !== 'aborted') {
-        setError(
-          ERROR_MESSAGES[event.error] ||
-            'Speech recognition stopped unexpectedly. Please try again.',
-        )
-      }
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         shouldListenRef.current = false
+        requestIdRef.current += 1
+        window.clearTimeout(restartTimerRef.current)
+        recognitionRef.current = null
+        releaseMicrophone()
+        setError(RECOGNITION_ERRORS[event.error] || 'Speech recognition stopped unexpectedly.')
       }
-      setListening(false)
-    }
 
-    recognition.onend = () => {
-      setListening(false)
-      setInterimText('')
+      recognition.onend = () => {
+        setIsListening(false)
+        setInterimText('')
+        if (recognitionRef.current !== recognition) return
+        if (!shouldListenRef.current || !mediaStreamRef.current) return
 
-      // Some browsers stop after a short pause. Restart while the teacher
-      // has explicitly kept microphone listening switched on.
-      if (shouldListenRef.current) {
         restartTimerRef.current = window.setTimeout(() => {
+          if (!shouldListenRef.current || !mediaStreamRef.current) return
           try {
             recognition.start()
           } catch {
             shouldListenRef.current = false
+            recognitionRef.current = null
+            releaseMicrophone()
+            setError('Speech recognition could not restart. Please enable it again.')
           }
         }, 300)
       }
-    }
 
-    recognitionRef.current = recognition
-    return () => {
-      shouldListenRef.current = false
-      window.clearTimeout(restartTimerRef.current)
-      recognition.abort()
-      recognitionRef.current = null
-    }
-  }, [])
-
-  const startListening = useCallback(() => {
-    if (!recognitionRef.current || !supported) return
-    setError('')
-    shouldListenRef.current = true
-    try {
       recognition.start()
-    } catch {
-      // Calling start while it is already running is harmless.
+    } catch (mediaError) {
+      const recognitionStartFailed = Boolean(recognitionRef.current)
+      shouldListenRef.current = false
+      requestIdRef.current += 1
+      window.clearTimeout(restartTimerRef.current)
+      recognitionRef.current = null
+      releaseMicrophone()
+      setIsRequesting(false)
+      if (recognitionStartFailed) {
+        setError('The browser could not start speech recognition after microphone access was granted.')
+      } else {
+        setError(getMicrophoneError(mediaError))
+      }
+    } finally {
+      if (requestId === requestIdRef.current) setIsRequesting(false)
     }
-  }, [supported])
+  }, [isRequesting, microphoneOn, releaseMicrophone, supportError, supported])
 
-  const stopListening = useCallback(() => {
+  useEffect(() => () => {
     shouldListenRef.current = false
+    requestIdRef.current += 1
     window.clearTimeout(restartTimerRef.current)
-    setInterimText('')
-    recognitionRef.current?.stop()
+    try {
+      recognitionRef.current?.abort()
+    } catch {
+      // The browser may already have stopped recognition.
+    }
+    recognitionRef.current = null
+    stopMediaStream(mediaStreamRef.current)
+    mediaStreamRef.current = null
   }, [])
 
-  return { supported, listening, interimText, error, startListening, stopListening }
+  return {
+    supported,
+    supportError,
+    isListening,
+    isRequesting,
+    microphoneOn,
+    interimText,
+    error,
+    startListening,
+    stopListening,
+  }
 }

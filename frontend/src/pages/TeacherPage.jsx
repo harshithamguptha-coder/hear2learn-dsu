@@ -100,13 +100,17 @@ export default function TeacherPage() {
           </button>
           {session?.status === 'active' && (
             <button
-              className="secondary-button microphone-button"
+              className={`secondary-button microphone-button ${speech.microphoneOn ? 'active' : ''}`}
               type="button"
-              onClick={speech.listening ? speech.stopListening : speech.startListening}
-              disabled={!speech.supported}
+              onClick={speech.microphoneOn ? speech.stopListening : speech.startListening}
+              disabled={speech.isRequesting}
             >
-              <span className={speech.listening ? 'mic-dot active' : 'mic-dot'} aria-hidden="true" />
-              {speech.listening ? 'Stop Microphone' : 'Start Microphone'}
+              <span className={speech.microphoneOn ? 'mic-dot active' : 'mic-dot'} aria-hidden="true" />
+              {speech.isRequesting
+                ? 'Requesting Permission…'
+                : speech.microphoneOn
+                  ? 'Stop Microphone'
+                  : 'Enable Microphone'}
             </button>
           )}
         </div>
@@ -124,13 +128,32 @@ export default function TeacherPage() {
           </div>
         )}
 
-        {!speech.supported && session?.status === 'active' && (
-          <p className="message error" role="alert">
-            This browser does not support Web Speech recognition. Use the latest
-            Chrome or Edge over HTTPS or localhost.
-          </p>
+        {session?.status === 'active' && (
+          <div className="microphone-feedback">
+            {speech.microphoneOn ? (
+              <p className="message microphone-on" role="status">
+                <span aria-hidden="true">🎙️</span> Microphone ON
+                {speech.isListening ? ' — listening for speech' : ' — starting speech recognition'}
+              </p>
+            ) : speech.isRequesting ? (
+              <p className="message info" role="status">
+                <span aria-hidden="true">🎙️</span> Allow microphone access in your browser…
+              </p>
+            ) : speech.error ? (
+              <p className="message error" role="alert">
+                <span aria-hidden="true">⚠️</span> {speech.error}
+              </p>
+            ) : !speech.supported ? (
+              <p className="message error" role="alert">
+                <span aria-hidden="true">⚠️</span> {speech.supportError}
+              </p>
+            ) : (
+              <p className="message info" role="status">
+                <span aria-hidden="true">🎙️</span> Microphone is off.
+              </p>
+            )}
+          </div>
         )}
-        {speech.error && <p className="message error" role="alert">{speech.error}</p>}
         {actionError && <p className="message error" role="alert">{actionError}</p>}
       </section>
 
