@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import router
+from .attendance_api import router as attendance_router
 from .auth_api import router as auth_router
 from .database import init_db
 from .notes_api import router as notes_router
@@ -48,6 +49,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(attendance_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(router, prefix="/api")
 app.include_router(notes_router, prefix="/api")

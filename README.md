@@ -31,12 +31,14 @@ features yet.
 backend/
   app/
     auth_api.py              # Register, login, and role protection
-    api.py                  # Authenticated lecture creation, transcript, and SSE routes
+    api.py                  # Lecture, transcript, and SSE routes
+    attendance_api.py       # Student join/leave and My Lectures routes
     translation_api.py      # Session-scoped translation endpoint
     notes_api.py            # Session-scoped lecture notes endpoint
     database.py             # SQLite connection and schema
     models.py               # Request/response schemas
     services/
+      attendance_service.py # Student attendance and personal history queries
       auth_service.py      # Password hashing, users, and signed bearer tokens
       session_service.py   # Session and transcript storage
       notes_service.py     # Deterministic extractive notes generation
@@ -48,7 +50,7 @@ frontend/
   src/
     api/                  # Small API client
     components/           # Shared transcript, translation, and sign UI
-    services/             # Fixed sign-phrase registry
+    services/             # Fixed sign-phrase registry and lecture history helpers
     hooks/                # Speech recognition and SSE hooks
     pages/                # Teacher and student pages
 ```
@@ -142,6 +144,14 @@ short summary, main topics, key points, and important terms. Transcripts below
 receive a session-ended SSE event and load the notes without refreshing, while
 the full translated and signed transcript remains below the notes card.
 
+## Student lecture history
+
+The Student dashboard keeps a personal attendance record in SQLite. Joining an
+active lecture stores `student_id`, `session_id`, and `joined_at`; leaving or
+ending the lecture fills `left_at`. The **My Lectures** card shows only the
+logged-in Student's own lecture title, date, attendance duration, Teacher, and
+status. Lecture identifiers remain the existing `session_id` values.
+
 ## Authentication notes
 
 Accounts are stored in the default SQLite database at `backend/classroom.db`.
@@ -175,6 +185,9 @@ local lecture and transcript data.
 | `POST` | `/api/sessions` | Start a backward-compatible foundation lecture |
 | `GET` | `/api/sessions/{session_id}` | Validate/join a lecture |
 | `POST` | `/api/sessions/{session_id}/end` | End a lecture |
+| `POST` | `/api/sessions/{session_id}/attendance/join` | Record the logged-in Student's join |
+| `POST` | `/api/sessions/{session_id}/attendance/leave` | Record the Student's leave |
+| `GET` | `/api/my-lectures` | List only the logged-in Student's attended lectures |
 | `GET` | `/api/sessions/{session_id}/transcript` | Read saved transcript |
 | `POST` | `/api/sessions/{session_id}/transcript` | Save finalized text |
 | `GET` | `/api/sessions/{session_id}/events` | Subscribe to live SSE events |

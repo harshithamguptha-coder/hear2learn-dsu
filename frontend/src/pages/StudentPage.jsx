@@ -1,15 +1,23 @@
 import { useAuth } from '../context/AuthContext'
 import { useEffect, useRef, useState } from 'react'
 
-import { getLectureNotes, getSession, structureTranscript } from '../api/client'
+import {
+  getLectureNotes,
+  getMyLectures,
+  getSession,
+  joinLectureAttendance,
+  leaveLectureAttendance,
+  structureTranscript,
+} from '../api/client'
 import LectureNotes from '../components/LectureNotes'
+import MyLectures from '../components/MyLectures'
 import StructuredLectureView from '../components/StructuredLectureView'
 import TranscriptView from '../components/TranscriptView'
 import { useLectureContext } from '../context/LectureContext'
 import { useSessionStream } from '../hooks/useSessionStream'
 
 export default function StudentPage() {
-  const { user } = useAuth()
+  const { user, token } = useAuth()
   const {
     studentInput: input,
     setStudentInput: setInput,
@@ -37,6 +45,10 @@ export default function StudentPage() {
   const [notes, setNotes] = useState(null)
   const [notesLoading, setNotesLoading] = useState(false)
   const [notesError, setNotesError] = useState('')
+  const [myLectures, setMyLectures] = useState([])
+  const [myLecturesLoading, setMyLecturesLoading] = useState(true)
+  const [myLecturesError, setMyLecturesError] = useState('')
+  const [leaving, setLeaving] = useState(false)
 
   const { transcript, connectionState, sessionEnded } = useSessionStream(
     session?.session_id,
@@ -44,22 +56,85 @@ export default function StudentPage() {
     setStudentTranscript,
   )
   const lastStructuredTextRef = useRef(studentLastStructuredText)
+  const activeAttendanceSessionRef = useRef('')
+
+  async function refreshMyLectures() {
+    setMyLecturesLoading(true)
+    setMyLecturesError('')
+    try {
+      setMyLectures(await getMyLectures())
+    } catch (requestError) {
+      setMyLecturesError(`Could not load your lecture history: ${requestError.message}`)
+    } finally {
+      setMyLecturesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    refreshMyLectures()
+  }, [])
+
+  async function recordAttendance(sessionId) {
+    if (!user || user.role !== 'student' || activeAttendanceSessionRef.current === sessionId) return
+    try {
+      await joinLectureAttendance(sessionId)
+      activeAttendanceSessionRef.current = sessionId
+      await refreshMyLectures()
+    } catch (attendanceError) {
+      setError(`Could not record lecture attendance: ${attendanceError.message}`)
+    }
+  }
+
+  async function handleLeaveLecture() {
+    if (!session || leaving) return
+    setLeaving(true)
+    setError('')
+    try {
+      await leaveLectureAttendance(session.session_id, token)
+      activeAttendanceSessionRef.current = ''
+      setSession(null)
+      setStudentTranscript([])
+      setStructuredData(null)
+      setStructureError('')
+      setQaResult(null)
+      setNotes(null)
+      setNotesError('')
+      setStudentLastStructuredText('')
+      lastStructuredTextRef.current = ''
+      await refreshMyLectures()
+    } catch (leaveError) {
+      setError(`Could not leave the lecture: ${leaveError.message}`)
+    } finally {
+      setLeaving(false)
+    }
+  }
+
+  useEffect(() => () => {
+    const sessionId = activeAttendanceSessionRef.current
+    if (sessionId) leaveLectureAttendance(sessionId, token).catch(() => {})
+  }, [token])
 
   // If student is not connected and teacher has an active session, auto-connect for seamless switching
   useEffect(() => {
     if (!session && teacherSession?.session_id) {
       setInput(teacherSession.session_id)
       setSession(teacherSession)
+      recordAttendance(teacherSession.session_id)
     }
   }, [session, teacherSession, setInput, setSession])
 
   useEffect(() => {
     if (sessionEnded) {
+      if (activeAttendanceSessionRef.current === session?.session_id) {
+        leaveLectureAttendance(session.session_id, token).catch(() => {})
+        activeAttendanceSessionRef.current = ''
+      }
       setSession((current) => (
         current ? { ...current, status: 'ended' } : current
       ))
+      refreshMyLectures()
     }
-  }, [sessionEnded, setSession])
+  }, [sessionEnded, session?.session_id, setSession, token])
 
   useEffect(() => {
     const sessionId = session?.session_id
@@ -94,6 +169,17 @@ export default function StudentPage() {
 
     setJoining(true)
     setError('')
+
+    const previousAttendanceSession = activeAttendanceSessionRef.current
+    if (previousAttendanceSession && previousAttendanceSession !== sessionId) {
+      try {
+        await leaveLectureAttendance(previousAttendanceSession, token)
+      } catch {
+        // The new lecture can still be opened if the old leave request fails.
+      }
+      activeAttendanceSessionRef.current = ''
+    }
+
     setSession(null)
     setStudentTranscript([])
     setStructuredData(null)
@@ -106,6 +192,9 @@ export default function StudentPage() {
 
     try {
       const foundSession = await getSession(sessionId)
+      if (foundSession.status === 'active') {
+        await recordAttendance(sessionId)
+      }
       setSession(foundSession)
     } catch (requestError) {
       setError(
@@ -173,6 +262,12 @@ export default function StudentPage() {
         <span className="page-number" aria-hidden="true">02</span>
       </div>
 
+      <MyLectures
+        lectures={myLectures}
+        loading={myLecturesLoading}
+        error={myLecturesError}
+      />
+
       <section className="join-card" aria-label="Join a lecture">
         <form onSubmit={handleJoin}>
           <label htmlFor="session-id">Lecture session ID</label>
@@ -222,8 +317,17 @@ export default function StudentPage() {
           <span className="connection-state" role="status">
             <span aria-hidden="true" /> {connectionLabel}
           </span>
-          {session.status === 'ended' && (
+          {session.status === 'ended' ? (
             <p className="message info">This lecture has ended. The saved transcript is still available.</p>
+          ) : (
+            <button
+              className="secondary-button leave-button"
+              type="button"
+              onClick={handleLeaveLecture}
+              disabled={leaving}
+            >
+              {leaving ? 'Leaving…' : 'Leave Lecture'}
+            </button>
           )}
         </section>
       )}

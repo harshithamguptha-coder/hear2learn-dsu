@@ -20,7 +20,7 @@ from .models import (
     TranscriptResponse,
     TranscriptStructureRequest,
 )
-from .services import session_service
+from .services import attendance_service, session_service
 from .services.ai_structuring import AIStructuringError, ai_structuring_service
 from .services.realtime import EventHub
 
@@ -90,13 +90,24 @@ async def end_session(
         transcript = session_service.list_transcript(db, session_id)
         notes_service.generate_and_save(db, session_id, transcript)
         session = session_service.end_session(db, session_id)
+        attendance_service.close_lecture_attendance(
+            db,
+            session_id=session_id,
+            left_at=session["end_time"] or session["ended_at"],
+        )
         await event_hub.publish(
             session_id,
             {"event": "session_ended", "session_id": session_id},
         )
         return session
 
-    return session_service.end_session(db, session_id)
+    session = session_service.end_session(db, session_id)
+    attendance_service.close_lecture_attendance(
+        db,
+        session_id=session_id,
+        left_at=session["end_time"] or session["ended_at"],
+    )
+    return session
 
 
 @router.get(

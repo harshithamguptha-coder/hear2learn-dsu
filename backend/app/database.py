@@ -100,7 +100,22 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
+
+            CREATE TABLE IF NOT EXISTS lecture_attendance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                joined_at TEXT NOT NULL,
+                left_at TEXT,
+                UNIQUE(student_id, session_id),
+                FOREIGN KEY (student_id) REFERENCES users(id),
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_lecture_attendance_student
+            ON lecture_attendance(student_id, joined_at DESC);
             """
+
         )
         _migrate_existing_schema(connection)
         connection.execute(

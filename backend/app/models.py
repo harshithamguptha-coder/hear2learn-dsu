@@ -146,3 +146,25 @@ class LectureNotesResponse(BaseModel):
     important_terms: list[str]
     message: str | None = None
     created_at: str
+
+
+AttendanceStatus = Literal["in_progress", "attended"]
+
+
+class LectureAttendanceResponse(BaseModel):
+    id: int
+    student_id: int
+    session_id: str
+    joined_at: str
+    left_at: str | None = None
+
+
+class MyLectureResponse(BaseModel):
+    session_id: str
+    title: str
+    teacher: str
+    lecture_date: str
+    joined_at: str
+    left_at: str | None = None
+    duration_seconds: int
+    status: AttendanceStatus

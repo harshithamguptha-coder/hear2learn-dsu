@@ -42,6 +42,24 @@ export function getCurrentUser(token) {
   return request('/auth/me', { token })
 }
 
+export function joinLectureAttendance(sessionId) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/attendance/join`, {
+    method: 'POST',
+  })
+}
+
+export function leaveLectureAttendance(sessionId, token) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/attendance/leave`, {
+    method: 'POST',
+    token,
+    keepalive: true,
+  })
+}
+
+export function getMyLectures() {
+  return request('/my-lectures')
+}
+
 export function createLecture(title, token) {
   return request('/lectures', {
     method: 'POST',

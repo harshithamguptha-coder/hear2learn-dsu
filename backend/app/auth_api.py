@@ -48,6 +48,13 @@ def require_teacher(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
+def require_student(current_user: dict = Depends(get_current_user)) -> dict:
+    if current_user["role"] != "student":
+        raise HTTPException(status_code=403, detail="Student access is required.")
+    return current_user
+
+
+
 @router.post("/register", response_model=AuthResponse, status_code=201)
 def register_user(
     payload: UserCreate,
