@@ -232,6 +232,13 @@ export default function StudentPage() {
             <LectureNotes notes={notes} loading={notesLoading} error={notesError} />
           )}
 
+          <TranscriptView
+            items={transcript}
+            emptyText="The transcript will appear here as soon as the teacher starts speaking."
+            sessionId={session.session_id}
+            translationLanguage={translationLanguage}
+          />
+
           <StructuredLectureView
             structuredData={structuredData}
             loading={structuring}
@@ -242,19 +249,6 @@ export default function StudentPage() {
             questionInput={questionInput}
             setQuestionInput={setQuestionInput}
           />
-
-          <details className="raw-transcript-details" open={!structuredData || translationLanguage !== 'en'}>
-            <summary className="raw-transcript-summary">
-              <span>Live Transcript, Translations & Signs</span>
-              <span className="raw-transcript-badge">{transcript.length} items</span>
-            </summary>
-            <TranscriptView
-              items={transcript}
-              emptyText="The transcript will appear here as soon as the teacher starts speaking."
-              sessionId={session.session_id}
-              translationLanguage={translationLanguage}
-            />
-          </details>
         </div>
       ) : (
         <div className="waiting-card" aria-hidden="true">

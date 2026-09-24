@@ -229,6 +229,7 @@ export default function TeacherPage() {
         items={transcript}
         interimText={speech.interimText}
         emptyText="Start the lecture and begin speaking. Your words will appear here."
+        sessionId={session?.session_id}
       />
     </main>
   )
