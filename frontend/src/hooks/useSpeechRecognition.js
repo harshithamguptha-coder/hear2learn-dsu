@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const ERROR_MESSAGES = {
-  'audio-capture': 'No microphone was found. Check your system sound input settings.',
-  'not-allowed': 'Microphone access was blocked. Click the lock icon in the address bar to allow microphone access.',
-  'network': 'Speech recognition service network error. If using Edge/Chrome, check your internet.',
-  'service-not-allowed': 'This browser could not start speech recognition service.',
-  'language-not-supported': 'This browser does not support en-US speech recognition.',
+const RECOGNITION_ERRORS = {
+  'audio-capture': 'No speech-recognition microphone was found.',
+  'not-allowed': 'Speech recognition is not allowed. Check the browser microphone permission.',
+  'network': 'Speech recognition lost its network connection.',
+  'service-not-allowed': 'The browser blocked the speech-recognition service.',
+  'language-not-supported': 'The browser does not support the selected speech language.',
 }
 
 function getSpeechRecognition() {
@@ -13,176 +13,202 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null
 }
 
+function getMicrophoneError(error) {
+  const messages = {
+    AbortError: 'Microphone startup was interrupted. Please try again.',
+    NotAllowedError: 'Microphone permission was denied. Allow access in your browser and try again.',
+    NotFoundError: 'No microphone was found. Connect a microphone and try again.',
+    NotReadableError: 'The microphone is already in use or cannot be read.',
+    OverconstrainedError: 'The selected microphone does not support the requested audio settings.',
+    SecurityError: 'Microphone access was blocked by browser security settings.',
+  }
+  return messages[error?.name] || 'The microphone could not be started. Please try again.'
+}
+
+function stopMediaStream(stream) {
+  stream?.getTracks().forEach((track) => track.stop())
+}
+
+// getUserMedia explicitly acquires and holds microphone permission. Web Speech
+// then provides the fast browser-based STT for the MVP.
 export function useSpeechRecognition(onFinalText) {
   const recognitionRef = useRef(null)
+  const mediaStreamRef = useRef(null)
   const callbackRef = useRef(onFinalText)
   const shouldListenRef = useRef(false)
   const restartTimerRef = useRef(null)
-  const interimTextRef = useRef('')
-  const [listening, setListening] = useState(false)
+  const requestIdRef = useRef(0)
+  const [isListening, setIsListening] = useState(false)
+  const [isRequesting, setIsRequesting] = useState(false)
+  const [microphoneOn, setMicrophoneOn] = useState(false)
   const [interimText, setInterimText] = useState('')
   const [error, setError] = useState('')
-  const supported = Boolean(getSpeechRecognition())
+
+  const recognitionSupported = Boolean(getSpeechRecognition())
+  const microphoneSupported =
+    typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia)
+  const supported = recognitionSupported && microphoneSupported
+  const supportError = !microphoneSupported
+    ? 'Microphone access requires a supported browser on HTTPS or localhost.'
+    : !recognitionSupported
+      ? 'This browser does not support Web Speech recognition. Use a current Chrome or Edge browser.'
+      : ''
 
   useEffect(() => {
     callbackRef.current = onFinalText
   }, [onFinalText])
 
-  const createAndStart = useCallback(() => {
-    const SpeechRecognition = getSpeechRecognition()
-    if (!SpeechRecognition) {
-      console.warn('[Speech] SpeechRecognition not supported in this browser.')
+  const releaseMicrophone = useCallback(() => {
+    stopMediaStream(mediaStreamRef.current)
+    mediaStreamRef.current = null
+    setMicrophoneOn(false)
+    setIsListening(false)
+  }, [])
+
+  const stopListening = useCallback(() => {
+    shouldListenRef.current = false
+    requestIdRef.current += 1
+    window.clearTimeout(restartTimerRef.current)
+
+    const recognition = recognitionRef.current
+    recognitionRef.current = null
+    try {
+      recognition?.stop()
+    } catch {
+      // Recognition may already be stopped by the browser.
+    }
+
+    setInterimText('')
+    setIsRequesting(false)
+    releaseMicrophone()
+  }, [releaseMicrophone])
+
+  const startListening = useCallback(async () => {
+    if (isRequesting || microphoneOn) return
+
+    if (!supported) {
+      setError(supportError)
       return
     }
 
-    // Clean up any lingering previous instance
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.onstart = null
-        recognitionRef.current.onresult = null
-        recognitionRef.current.onerror = null
-        recognitionRef.current.onend = null
-        recognitionRef.current.abort()
-      } catch (e) {
-        console.warn('[Speech] Error cleaning previous instance:', e)
-      }
-      recognitionRef.current = null
-    }
+    const SpeechRecognition = getSpeechRecognition()
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    shouldListenRef.current = true
+    setError('')
+    setIsRequesting(true)
 
-    console.log('[Speech] Initializing new SpeechRecognition instance...')
-    const recognition = new SpeechRecognition()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
-
-    recognition.onstart = () => {
-      console.log('[Speech] onstart: microphone is actively listening.')
-      setError('')
-      setListening(true)
-    }
-
-    recognition.onresult = (event) => {
-      let interim = ''
-      let final = ''
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index]
-        const text = result[0]?.transcript || ''
-        if (result.isFinal) {
-          final += (final ? ' ' : '') + text
-        } else {
-          interim += (interim ? ' ' : '') + text
-        }
-      }
-
-      console.log('[Speech] onresult -> final:', final, '| interim:', interim)
-
-      interimTextRef.current = interim.trim()
-      setInterimText(interim.trim())
-
-      if (final.trim()) {
-        interimTextRef.current = ''
-        setInterimText('')
-        console.log('[Speech] Finalizing text to callback:', final.trim())
-        callbackRef.current(final.trim())
-      }
-    }
-
-    recognition.onerror = (event) => {
-      console.warn('[Speech] onerror:', event.error)
-
-      // 'no-speech' is expected when the user pauses
-      if (event.error === 'no-speech') {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (requestId !== requestIdRef.current || !shouldListenRef.current) {
+        stopMediaStream(mediaStream)
         return
       }
 
-      if (event.error !== 'aborted') {
-        setError(
-          ERROR_MESSAGES[event.error] ||
-            `Speech recognition error: ${event.error}`,
-        )
+      mediaStreamRef.current = mediaStream
+      setMicrophoneOn(true)
+
+      const recognition = new SpeechRecognition()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = 'en-US'
+      recognitionRef.current = recognition
+
+      recognition.onstart = () => {
+        setError('')
+        setIsListening(true)
       }
 
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        shouldListenRef.current = false
-      }
-      setListening(false)
-    }
+      recognition.onresult = (event) => {
+        const finalParts = []
+        const interimParts = []
 
-    recognition.onend = () => {
-      console.log('[Speech] onend. shouldListen:', shouldListenRef.current)
-      setListening(false)
-
-      // If speech ended with lingering interim text, finalize it
-      if (interimTextRef.current) {
-        const lingering = interimTextRef.current
-        interimTextRef.current = ''
-        setInterimText('')
-        console.log('[Speech] onend finalizing lingering interim text:', lingering)
-        callbackRef.current(lingering)
-      } else {
-        setInterimText('')
-      }
-
-      // Auto-restart if teacher kept microphone toggled on
-      if (shouldListenRef.current) {
-        restartTimerRef.current = window.setTimeout(() => {
-          if (!shouldListenRef.current) return
-          console.log('[Speech] Auto-restarting continuous listener...')
-          createAndStart()
-        }, 150)
-      }
-    }
-
-    recognitionRef.current = recognition
-    try {
-      recognition.start()
-      console.log('[Speech] recognition.start() invoked successfully.')
-    } catch (err) {
-      console.error('[Speech] Failed to start recognition:', err)
-      setError(`Could not start microphone: ${err.message}`)
-      shouldListenRef.current = false
-      setListening(false)
-    }
-  }, [])
-
-  const startListening = useCallback(() => {
-    console.log('[Speech] startListening button clicked.')
-    if (!supported) return
-    setError('')
-    shouldListenRef.current = true
-    createAndStart()
-  }, [supported, createAndStart])
-
-  const stopListening = useCallback(() => {
-    console.log('[Speech] stopListening clicked.')
-    shouldListenRef.current = false
-    window.clearTimeout(restartTimerRef.current)
-    setInterimText('')
-    interimTextRef.current = ''
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-      } catch (e) {
-        console.warn('[Speech] Error stopping recognition:', e)
-      }
-    }
-    setListening(false)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      shouldListenRef.current = false
-      window.clearTimeout(restartTimerRef.current)
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort()
-        } catch {
-          // ignore
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index]
+          const text = result[0].transcript.trim()
+          if (!text) continue
+          if (result.isFinal) finalParts.push(text)
+          else interimParts.push(text)
         }
+
+        setInterimText(interimParts.join(' '))
+        const finalText = finalParts.join(' ')
+        if (finalText) callbackRef.current(finalText)
       }
+
+      recognition.onerror = (event) => {
+        if (event.error === 'aborted' || event.error === 'no-speech') return
+
+        shouldListenRef.current = false
+        requestIdRef.current += 1
+        window.clearTimeout(restartTimerRef.current)
+        recognitionRef.current = null
+        releaseMicrophone()
+        setError(RECOGNITION_ERRORS[event.error] || 'Speech recognition stopped unexpectedly.')
+      }
+
+      recognition.onend = () => {
+        setIsListening(false)
+        setInterimText('')
+        if (recognitionRef.current !== recognition) return
+        if (!shouldListenRef.current || !mediaStreamRef.current) return
+
+        restartTimerRef.current = window.setTimeout(() => {
+          if (!shouldListenRef.current || !mediaStreamRef.current) return
+          try {
+            recognition.start()
+          } catch {
+            shouldListenRef.current = false
+            recognitionRef.current = null
+            releaseMicrophone()
+            setError('Speech recognition could not restart. Please enable it again.')
+          }
+        }, 300)
+      }
+
+      recognition.start()
+    } catch (mediaError) {
+      const recognitionStartFailed = Boolean(recognitionRef.current)
+      shouldListenRef.current = false
+      requestIdRef.current += 1
+      window.clearTimeout(restartTimerRef.current)
+      recognitionRef.current = null
+      releaseMicrophone()
+      setIsRequesting(false)
+      if (recognitionStartFailed) {
+        setError('The browser could not start speech recognition after microphone access was granted.')
+      } else {
+        setError(getMicrophoneError(mediaError))
+      }
+    } finally {
+      if (requestId === requestIdRef.current) setIsRequesting(false)
     }
+  }, [isRequesting, microphoneOn, releaseMicrophone, supportError, supported])
+
+  useEffect(() => () => {
+    shouldListenRef.current = false
+    requestIdRef.current += 1
+    window.clearTimeout(restartTimerRef.current)
+    try {
+      recognitionRef.current?.abort()
+    } catch {
+      // The browser may already have stopped recognition.
+    }
+    recognitionRef.current = null
+    stopMediaStream(mediaStreamRef.current)
+    mediaStreamRef.current = null
   }, [])
 
-  return { supported, listening, interimText, error, startListening, stopListening }
+  return {
+    supported,
+    supportError,
+    isListening,
+    listening: isListening || microphoneOn,
+    isRequesting,
+    microphoneOn,
+    interimText,
+    error,
+    startListening,
+    stopListening,
+  }
 }

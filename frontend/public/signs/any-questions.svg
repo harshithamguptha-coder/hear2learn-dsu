@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Any questions sign placeholder</title>
+  <desc id="desc">A simple illustrated raised-hand gesture representing Any questions.</desc>
+  <rect width="640" height="360" rx="24" fill="#e7f6ee"/>
+  <circle cx="320" cy="139" r="68" fill="#ffd9b8"/>
+  <path d="M265 194c-30 20-44 52-41 91h192c3-39-11-71-41-91-18 12-35 18-55 18s-37-6-55-18Z" fill="#2b8b73"/>
+  <path d="M300 289c-11-16-16-36-16-61v-91c0-14 19-18 23-4l13 46 2-75c0-14 20-16 23-2l8 74 8-69c2-14 22-12 22 3l-3 78 14-58c4-13 23-8 21 6l-15 83c-9 57-37 87-84 87-14 0-27-6-36-17Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+  <text x="464" y="122" text-anchor="middle" font-family="Arial, sans-serif" font-size="96" font-weight="800" fill="#35664d">?</text>
+  <rect x="174" y="316" width="292" height="30" rx="15" fill="#fff"/>
+  <text x="320" y="338" text-anchor="middle" font-family="Arial, sans-serif" font-size="21" font-weight="700" fill="#1d563d">Any questions?</text>
+</svg>

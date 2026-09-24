@@ -15,15 +15,18 @@ export function useSessionStream(sessionId, externalTranscript, externalSetTrans
   const transcript = externalTranscript !== undefined ? externalTranscript : internalTranscript
   const setTranscript = externalSetTranscript || setInternalTranscript
   const [connectionState, setConnectionState] = useState('idle')
+  const [endedSessionId, setEndedSessionId] = useState('')
 
   useEffect(() => {
     if (!sessionId) {
       setTranscript([])
+      setEndedSessionId('')
       setConnectionState('idle')
       return undefined
     }
 
     const source = new EventSource(sessionStreamUrl(sessionId))
+    setEndedSessionId('')
     setConnectionState('connecting')
 
     const receiveSnapshot = (event) => {
@@ -36,8 +39,14 @@ export function useSessionStream(sessionId, externalTranscript, externalSetTrans
       setTranscript((current) => mergeTranscript(current, [newItem]))
     }
 
+    const receiveSessionEnded = (event) => {
+      const message = JSON.parse(event.data)
+      if (message.session_id === sessionId) setEndedSessionId(sessionId)
+    }
+
     source.addEventListener('snapshot', receiveSnapshot)
     source.addEventListener('transcript', receiveTranscript)
+    source.addEventListener('session-ended', receiveSessionEnded)
     source.onopen = () => setConnectionState('connected')
     source.onerror = () => setConnectionState('reconnecting')
 
@@ -46,5 +55,9 @@ export function useSessionStream(sessionId, externalTranscript, externalSetTrans
     }
   }, [sessionId, setTranscript])
 
-  return { transcript, connectionState }
+  return {
+    transcript,
+    connectionState,
+    sessionEnded: Boolean(sessionId && endedSessionId === sessionId),
+  }
 }

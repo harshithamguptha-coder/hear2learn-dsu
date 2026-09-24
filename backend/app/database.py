@@ -53,6 +53,19 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_transcripts_session_id
             ON transcripts(session_id, id);
+
+            CREATE TABLE IF NOT EXISTS lecture_notes (
+                session_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL CHECK (status IN ('ready', 'too_short')),
+                title TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                main_topics TEXT NOT NULL,
+                key_points TEXT NOT NULL,
+                important_terms TEXT NOT NULL,
+                message TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            );
             """
         )
         connection.commit()

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { getSession, structureTranscript } from '../api/client'
+import { getLectureNotes, getSession, structureTranscript } from '../api/client'
+import LectureNotes from '../components/LectureNotes'
 import StructuredLectureView from '../components/StructuredLectureView'
 import TranscriptView from '../components/TranscriptView'
 import { useLectureContext } from '../context/LectureContext'
@@ -30,7 +31,12 @@ export default function StudentPage() {
   const [error, setError] = useState('')
   const [joining, setJoining] = useState(false)
   const [structuring, setStructuring] = useState(false)
-  const { transcript, connectionState } = useSessionStream(
+  const [translationLanguage, setTranslationLanguage] = useState('en')
+  const [notes, setNotes] = useState(null)
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [notesError, setNotesError] = useState('')
+
+  const { transcript, connectionState, sessionEnded } = useSessionStream(
     session?.session_id,
     studentTranscript,
     setStudentTranscript,
@@ -44,6 +50,40 @@ export default function StudentPage() {
       setSession(teacherSession)
     }
   }, [session, teacherSession, setInput, setSession])
+
+  useEffect(() => {
+    if (sessionEnded) {
+      setSession((current) => (
+        current ? { ...current, status: 'ended' } : current
+      ))
+    }
+  }, [sessionEnded, setSession])
+
+  useEffect(() => {
+    const sessionId = session?.session_id
+    const shouldLoad = session?.status === 'ended' || sessionEnded
+    if (!sessionId || !shouldLoad || notes) return undefined
+
+    let cancelled = false
+    setNotesLoading(true)
+    setNotesError('')
+    getLectureNotes(sessionId)
+      .then((generatedNotes) => {
+        if (!cancelled) setNotes(generatedNotes)
+      })
+      .catch((requestError) => {
+        if (!cancelled) {
+          setNotesError(`Lecture notes could not be loaded: ${requestError.message}`)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNotesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [notes, session?.session_id, session?.status, sessionEnded])
 
   async function handleJoin(event) {
     event.preventDefault()
@@ -59,6 +99,8 @@ export default function StudentPage() {
     setQaResult(null)
     setStudentLastStructuredText('')
     lastStructuredTextRef.current = ''
+    setNotes(null)
+    setNotesError('')
 
     try {
       const foundSession = await getSession(sessionId)
@@ -160,6 +202,21 @@ export default function StudentPage() {
             <p className="eyebrow">You are in</p>
             <h2 id="joined-title">Lecture {session.session_id}</h2>
           </div>
+          <div className="language-control">
+            <label htmlFor="translation-language">Translation language</label>
+            <select
+              id="translation-language"
+              value={translationLanguage}
+              onChange={(event) => setTranslationLanguage(event.target.value)}
+              aria-describedby="translation-help"
+            >
+              <option value="en">English (original)</option>
+              <option value="kn">Kannada</option>
+              <option value="hi">Hindi</option>
+              <option value="te">Telugu</option>
+            </select>
+            <small id="translation-help">The original English always stays visible.</small>
+          </div>
           <span className="connection-state" role="status">
             <span aria-hidden="true" /> {connectionLabel}
           </span>
@@ -171,6 +228,10 @@ export default function StudentPage() {
 
       {session ? (
         <div className="student-lecture-layout">
+          {(notes || notesLoading || notesError) && (
+            <LectureNotes notes={notes} loading={notesLoading} error={notesError} />
+          )}
+
           <StructuredLectureView
             structuredData={structuredData}
             loading={structuring}
@@ -190,6 +251,8 @@ export default function StudentPage() {
             <TranscriptView
               items={transcript}
               emptyText="The transcript will appear here as soon as the teacher starts speaking."
+              sessionId={session.session_id}
+              translationLanguage={translationLanguage}
             />
           </details>
         </div>

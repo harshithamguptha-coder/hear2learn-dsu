@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Good morning sign placeholder</title>
+  <desc id="desc">A simple illustrated hand gesture representing Good morning.</desc>
+  <rect width="640" height="360" rx="24" fill="#e7f6ee"/>
+  <circle cx="320" cy="152" r="78" fill="#ffd9b8"/>
+  <path d="M260 202c-26 18-39 47-36 82h192c3-35-13-64-39-82-17 13-35 19-54 19s-46-6-63-19Z" fill="#3c78c2"/>
+  <path d="M202 270c-15-22-22-42-22-61 0-10 13-14 20-6l24 27-42-69c-6-10 8-20 16-11l42 52-24-76c-4-12 12-18 18-7l27 72 1-73c0-13 17-15 20-2l5 85 19-61c5-12 22-8 20 6l-16 91c-8 45-27 73-58 85-21 8-43-4-50-23Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+  <rect x="150" y="306" width="340" height="38" rx="19" fill="#fff"/>
+  <text x="320" y="332" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#1d563d">Good morning</text>
+</svg>
