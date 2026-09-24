@@ -10,8 +10,10 @@ function mergeTranscript(current, incoming) {
 
 // EventSource gives students the saved snapshot, then each new saved result.
 // The browser automatically reconnects if the connection briefly drops.
-export function useSessionStream(sessionId) {
-  const [transcript, setTranscript] = useState([])
+export function useSessionStream(sessionId, externalTranscript, externalSetTranscript) {
+  const [internalTranscript, setInternalTranscript] = useState([])
+  const transcript = externalTranscript !== undefined ? externalTranscript : internalTranscript
+  const setTranscript = externalSetTranscript || setInternalTranscript
   const [connectionState, setConnectionState] = useState('idle')
 
   useEffect(() => {
@@ -22,7 +24,6 @@ export function useSessionStream(sessionId) {
     }
 
     const source = new EventSource(sessionStreamUrl(sessionId))
-    setTranscript([])
     setConnectionState('connecting')
 
     const receiveSnapshot = (event) => {
@@ -43,7 +44,7 @@ export function useSessionStream(sessionId) {
     return () => {
       source.close()
     }
-  }, [sessionId])
+  }, [sessionId, setTranscript])
 
   return { transcript, connectionState }
 }

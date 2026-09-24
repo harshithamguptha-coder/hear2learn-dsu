@@ -1,11 +1,25 @@
 import { useState } from 'react'
 import { askLectureQuestion } from '../api/client'
 
-export default function StructuredLectureView({ structuredData, loading, error, sessionId }) {
-  const [questionInput, setQuestionInput] = useState('')
+export default function StructuredLectureView({
+  structuredData,
+  loading,
+  error,
+  sessionId,
+  qaResult: externalQaResult,
+  setQaResult: externalSetQaResult,
+  questionInput: externalQuestionInput,
+  setQuestionInput: externalSetQuestionInput,
+}) {
+  const [internalQuestionInput, setInternalQuestionInput] = useState('')
+  const [internalQaResult, setInternalQaResult] = useState(null)
   const [qaLoading, setQaLoading] = useState(false)
-  const [qaResult, setQaResult] = useState(null)
   const [qaError, setQaError] = useState('')
+
+  const questionInput = externalQuestionInput !== undefined ? externalQuestionInput : internalQuestionInput
+  const setQuestionInput = externalSetQuestionInput || setInternalQuestionInput
+  const qaResult = externalQaResult !== undefined ? externalQaResult : internalQaResult
+  const setQaResult = externalSetQaResult || setInternalQaResult
 
   async function handleAskQuestion(e) {
     e.preventDefault()

@@ -1,5 +1,6 @@
 import { Link, Route, Routes } from 'react-router-dom'
 
+import { LectureProvider } from './context/LectureContext'
 import StudentPage from './pages/StudentPage'
 import TeacherPage from './pages/TeacherPage'
 
@@ -36,24 +37,26 @@ function HomePage() {
 
 export default function App() {
   return (
-    <div className="app-frame">
-      <header className="site-header">
-        <Link className="brand" to="/">
-          <span className="brand-mark" aria-hidden="true">A</span>
-          <span>Accessible Classroom</span>
-        </Link>
-        <nav aria-label="Main navigation">
-          <Link to="/teacher">Teacher</Link>
-          <Link to="/student">Student</Link>
-        </nav>
-      </header>
+    <LectureProvider>
+      <div className="app-frame">
+        <header className="site-header">
+          <Link className="brand" to="/">
+            <span className="brand-mark" aria-hidden="true">A</span>
+            <span>Accessible Classroom</span>
+          </Link>
+          <nav aria-label="Main navigation">
+            <Link to="/teacher">Teacher</Link>
+            <Link to="/student">Student</Link>
+          </nav>
+        </header>
 
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/teacher" element={<TeacherPage />} />
-        <Route path="/student" element={<StudentPage />} />
-        <Route path="*" element={<HomePage />} />
-      </Routes>
-    </div>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/teacher" element={<TeacherPage />} />
+          <Route path="/student" element={<StudentPage />} />
+          <Route path="*" element={<HomePage />} />
+        </Routes>
+      </div>
+    </LectureProvider>
   )
 }

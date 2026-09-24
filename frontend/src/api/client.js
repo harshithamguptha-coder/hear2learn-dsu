@@ -44,3 +44,18 @@ export function saveTranscript(sessionId, text) {
 export function sessionStreamUrl(sessionId) {
   return `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/events`
 }
+
+export function structureTranscript(sessionId, text) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/structure`, {
+    method: 'POST',
+    body: JSON.stringify(text ? { text } : {}),
+  })
+}
+
+export function askLectureQuestion(sessionId, question) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/qa`, {
+    method: 'POST',
+    body: JSON.stringify({ question }),
+  })
+}
+

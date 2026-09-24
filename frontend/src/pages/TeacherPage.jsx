@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createSession, endSession, saveTranscript } from '../api/client'
 import TranscriptView from '../components/TranscriptView'
+import { useLectureContext } from '../context/LectureContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 function mergeItem(current, newItem) {
@@ -11,8 +12,21 @@ function mergeItem(current, newItem) {
 }
 
 export default function TeacherPage() {
-  const [session, setSession] = useState(null)
-  const [transcript, setTranscript] = useState([])
+  const {
+    teacherSession: session,
+    setTeacherSession: setSession,
+    teacherTranscript: transcript,
+    setTeacherTranscript: setTranscript,
+    setStudentSession,
+    setStudentInput,
+    setStudentTranscript,
+    setStudentStructuredData,
+    setStudentStructureError,
+    setStudentQaResult,
+    setStudentQuestionInput,
+    setStudentLastStructuredText,
+  } = useLectureContext()
+
   const [actionError, setActionError] = useState('')
   const [busyAction, setBusyAction] = useState('')
   const [copied, setCopied] = useState(false)
@@ -41,7 +55,7 @@ export default function TeacherPage() {
       console.error('[Teacher] Error saving transcript:', error)
       setActionError(`Could not save transcript: ${error.message}`)
     }
-  }, [])
+  }, [setTranscript])
 
   const speech = useSpeechRecognition(handleFinalText)
 
@@ -54,6 +68,14 @@ export default function TeacherPage() {
       console.log('[Teacher] Created new lecture session:', newSession)
       setSession(newSession)
       setTranscript([])
+      setStudentSession(newSession)
+      setStudentInput(newSession.session_id)
+      setStudentTranscript([])
+      setStudentStructuredData(null)
+      setStudentStructureError('')
+      setStudentQaResult(null)
+      setStudentQuestionInput('')
+      setStudentLastStructuredText('')
     } catch (error) {
       setActionError(`Could not start the lecture: ${error.message}`)
     } finally {
@@ -69,6 +91,7 @@ export default function TeacherPage() {
     try {
       const endedSession = await endSession(session.session_id)
       setSession(endedSession)
+      setStudentSession(endedSession)
     } catch (error) {
       setActionError(`Could not end the lecture: ${error.message}`)
     } finally {

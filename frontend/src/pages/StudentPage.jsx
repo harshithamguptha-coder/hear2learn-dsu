@@ -1,15 +1,49 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { getSession } from '../api/client'
+import { getSession, structureTranscript } from '../api/client'
+import StructuredLectureView from '../components/StructuredLectureView'
 import TranscriptView from '../components/TranscriptView'
+import { useLectureContext } from '../context/LectureContext'
 import { useSessionStream } from '../hooks/useSessionStream'
 
 export default function StudentPage() {
-  const [input, setInput] = useState('')
-  const [session, setSession] = useState(null)
+  const {
+    studentInput: input,
+    setStudentInput: setInput,
+    studentSession: session,
+    setStudentSession: setSession,
+    studentTranscript,
+    setStudentTranscript,
+    studentStructuredData: structuredData,
+    setStudentStructuredData: setStructuredData,
+    studentStructureError: structureError,
+    setStudentStructureError: setStructureError,
+    studentQaResult: qaResult,
+    setStudentQaResult: setQaResult,
+    studentQuestionInput: questionInput,
+    setStudentQuestionInput: setQuestionInput,
+    studentLastStructuredText,
+    setStudentLastStructuredText,
+    teacherSession,
+  } = useLectureContext()
+
   const [error, setError] = useState('')
   const [joining, setJoining] = useState(false)
-  const { transcript, connectionState } = useSessionStream(session?.session_id)
+  const [structuring, setStructuring] = useState(false)
+  const { transcript, connectionState } = useSessionStream(
+    session?.session_id,
+    studentTranscript,
+    setStudentTranscript,
+  )
+  const lastStructuredTextRef = useRef(studentLastStructuredText)
+
+  // If student is not connected and teacher has an active session, auto-connect for seamless switching
+  useEffect(() => {
+    if (!session && teacherSession?.session_id) {
+      setInput(teacherSession.session_id)
+      setSession(teacherSession)
+    }
+  }, [session, teacherSession, setInput, setSession])
 
   async function handleJoin(event) {
     event.preventDefault()
@@ -19,8 +53,16 @@ export default function StudentPage() {
     setJoining(true)
     setError('')
     setSession(null)
+    setStudentTranscript([])
+    setStructuredData(null)
+    setStructureError('')
+    setQaResult(null)
+    setStudentLastStructuredText('')
+    lastStructuredTextRef.current = ''
+
     try {
-      setSession(await getSession(sessionId))
+      const foundSession = await getSession(sessionId)
+      setSession(foundSession)
     } catch (requestError) {
       setError(
         requestError.status === 404
@@ -32,12 +74,47 @@ export default function StudentPage() {
     }
   }
 
+  // 1500ms debounced transcript structuring
+  useEffect(() => {
+    if (!session?.session_id) return
+
+    const fullText = transcript.map((item) => item.text).join(' ').trim()
+    if (!fullText) return
+
+    if (fullText === lastStructuredTextRef.current || fullText === studentLastStructuredText) return
+
+    const timer = setTimeout(async () => {
+      setStructuring(true)
+      try {
+        const result = await structureTranscript(session.session_id, fullText)
+        setStructuredData(result)
+        lastStructuredTextRef.current = fullText
+        setStudentLastStructuredText(fullText)
+        setStructureError('')
+      } catch (err) {
+        setStructureError(err.message || 'Could not update structured lecture notes.')
+      } finally {
+        setStructuring(false)
+      }
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [
+    session?.session_id,
+    transcript,
+    setStructuredData,
+    setStructureError,
+    studentLastStructuredText,
+    setStudentLastStructuredText,
+  ])
+
   const connectionLabel = {
     idle: 'Not connected',
     connecting: 'Connecting…',
     connected: 'Live connection',
     reconnecting: 'Reconnecting…',
-  }[connectionState]
+    ended: 'Lecture finished',
+  }[connectionState] || 'Not connected'
 
   return (
     <main className="shell page-shell">
@@ -91,10 +168,29 @@ export default function StudentPage() {
       )}
 
       {session ? (
-        <TranscriptView
-          items={transcript}
-          emptyText="The transcript will appear here as soon as the teacher starts speaking."
-        />
+        <div className="student-lecture-layout">
+          <StructuredLectureView
+            structuredData={structuredData}
+            loading={structuring}
+            error={structureError}
+            sessionId={session.session_id}
+            qaResult={qaResult}
+            setQaResult={setQaResult}
+            questionInput={questionInput}
+            setQuestionInput={setQuestionInput}
+          />
+
+          <details className="raw-transcript-details" open={!structuredData}>
+            <summary className="raw-transcript-summary">
+              <span>Raw Live Transcript</span>
+              <span className="raw-transcript-badge">{transcript.length} items</span>
+            </summary>
+            <TranscriptView
+              items={transcript}
+              emptyText="The transcript will appear here as soon as the teacher starts speaking."
+            />
+          </details>
+        </div>
       ) : (
         <div className="waiting-card" aria-hidden="true">
           <span>Join a lecture to see its live transcript.</span>
