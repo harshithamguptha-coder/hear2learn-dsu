@@ -190,6 +190,48 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
 .sign-representation figcaption strong { font-size: 1rem; }
 .sign-representation img { display: block; width: 100%; max-width: 360px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: #fff; }
 .sign-representation small { display: block; margin-top: 7px; color: var(--muted); font-size: 0.72rem; }
+
+.sign-animation-frame {
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #cfe4d7;
+  border-radius: 8px;
+}
+.sign-animation-frame object,
+.sign-animation-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: cover;
+}
+.sign-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.sign-control-button {
+  min-height: 34px;
+  padding: 6px 11px;
+  color: #28583f;
+  background: #fff;
+  border: 1px solid #a9cdb8;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 750;
+}
+.sign-control-button:hover:not(:disabled) { background: #e4f5eb; }
+.sign-control-button:disabled { cursor: not-allowed; opacity: .5; }
+.teacher-session-summary {
+  margin-top: 22px;
+  padding: 16px 20px;
+  color: #47698f;
+  background: #f5f9fe;
+  border: 1px solid #c9d9ed;
+  border-radius: 12px;
+}
+.teacher-session-summary p { margin: 0; line-height: 1.6; }
+
 @media (max-width: 680px) {
   .site-header { padding-inline: 16px; }
   .brand > span:last-child { display: none; }

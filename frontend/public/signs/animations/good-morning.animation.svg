@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Good morning animated sign cue</title>
+  <desc id="desc">A short looping illustration of a raised hand moving outward from the forehead.</desc>
+  <rect width="640" height="360" rx="24" fill="#e7f6ee"/>
+  <circle cx="320" cy="126" r="58" fill="#ffd9b8"/>
+  <path d="M262 184c-28 18-40 48-37 82h190c3-34-12-64-37-82-16 12-33 18-51 18s-49-6-65-18Z" fill="#3c78c2"/>
+  <g>
+    <path d="M217 275c-13-25-19-48-16-70 2-12 17-15 23-4l20 38-3-74c0-14 19-16 22-2l8 70 15-62c4-13 23-8 21 6l-13 80 27-45c7-12 25-3 19 11l-30 62c-13 28-35 42-62 42-24 0-43-18-51-52Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+    <animateTransform attributeName="transform" type="rotate" values="-8 320 230;8 320 230;-8 320 230" dur="2.4s" repeatCount="indefinite"/>
+  </g>
+  <path d="M398 198c30 7 48 28 54 54" fill="none" stroke="#35664d" stroke-width="8" stroke-linecap="round">
+    <animate attributeName="opacity" values=".35;1;.35" dur="1.2s" repeatCount="indefinite"/>
+  </path>
+  <rect x="170" y="306" width="300" height="34" rx="17" fill="#fff"/>
+  <text x="320" y="329" text-anchor="middle" font-family="Arial, sans-serif" font-size="21" font-weight="700" fill="#1d563d">Good morning</text>
+</svg>

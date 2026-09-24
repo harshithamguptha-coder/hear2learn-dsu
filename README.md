@@ -18,7 +18,7 @@ features yet.
 - Finalized text is sent to FastAPI, saved in SQLite, and broadcast with SSE.
 - Students receive the saved transcript first and then live additions.
 - Students can request optional Kannada, Hindi, or Telugu translations per segment.
-- Fixed classroom phrases can show local sign-representation placeholders.
+- Fixed classroom phrases can show local animated sign representations, with the original static SVG as a fallback.
 - Ending a lecture generates notes from only that session's transcript.
 - The original English remains visible if translation is unavailable.
 - Reconnecting students receive the SQLite-backed transcript again.
@@ -46,7 +46,7 @@ backend/
       realtime.py           # In-memory live event queues
   tests/                    # API and SSE tests
 frontend/
-  public/signs/         # Local MVP sign placeholder illustrations
+  public/signs/         # Local animated phrase assets and static fallbacks
   src/
     api/                  # Small API client
     components/           # Shared transcript, translation, and sign UI
@@ -128,8 +128,10 @@ again later.
 The Student transcript checks each finalized English segment against the fixed
 MVP registry in `frontend/src/services/signLanguage.js`. Only these phrases are
 supported: "Good morning", "Open your book", "Pay attention", "Any questions?",
-and "Thank you". A match shows one local placeholder SVG beneath the original
-and optional translation. Unsupported or longer sentences are not represented.
+and "Thank you". A match shows a short local animated SVG representation with
+play/pause/replay controls; the original static SVG remains a fallback. These are
+illustrative fixed-phrase animations, not unrestricted sentence-to-sign
+translation. Unsupported or longer sentences are not represented.
 The current `session_id` scopes the Student rendering; no new session or API is
 created.
 

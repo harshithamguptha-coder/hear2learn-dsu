@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createLecture, endSession, saveTranscript } from '../api/client'
-import TranscriptView from '../components/TranscriptView'
 import { useAuth } from '../context/AuthContext'
 import { useLectureContext } from '../context/LectureContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
@@ -239,12 +238,11 @@ export default function TeacherPage() {
         {actionError && <p className="message error" role="alert">{actionError}</p>}
       </section>
 
-      <TranscriptView
-        items={transcript}
-        interimText={speech.interimText}
-        emptyText="Start the lecture and begin speaking. Your words will appear here."
-        sessionId={session?.session_id}
-      />
+      {session && (
+        <section className="teacher-session-summary" aria-label="Current lecture">
+          <p>Transcript is available to joined Students in the Student dashboard.</p>
+        </section>
+      )}
     </main>
   )
 }

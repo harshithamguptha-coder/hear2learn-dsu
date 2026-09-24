@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Pay attention animated sign cue</title>
+  <desc id="desc">A short looping illustration of an index finger pointing toward the viewer.</desc>
+  <rect width="640" height="360" rx="24" fill="#e7f6ee"/>
+  <circle cx="320" cy="119" r="55" fill="#ffd9b8"/>
+  <path d="M265 174c-28 18-40 47-37 80h184c3-33-11-62-37-80-16 12-33 18-51 18s-43-6-59-18Z" fill="#c14c4c"/>
+  <g>
+    <path d="M238 281l-9-87c-2-14 17-20 22-6l17 48 7-84c1-14 21-15 23-1l4 72 12-78c3-14 23-9 21 5l-10 85 22-57c6-13 24-5 20 9l-27 96c-11 39-34 59-67 59-25 0-45-19-51-61Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+    <animateTransform attributeName="transform" type="translate" values="0 0;0 -10;0 0" dur="1.5s" repeatCount="indefinite"/>
+  </g>
+  <circle cx="405" cy="145" r="10" fill="#35664d">
+    <animate attributeName="r" values="8;13;8" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <path d="M424 155l31 27m0-27-31 27" stroke="#35664d" stroke-width="7" stroke-linecap="round"/>
+  <rect x="202" y="314" width="236" height="30" rx="15" fill="#fff"/>
+  <text x="320" y="335" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1d563d">Pay attention</text>
+</svg>

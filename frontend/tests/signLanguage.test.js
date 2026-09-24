@@ -13,12 +13,16 @@ const EXPECTED_PHRASES = [
   'Thank you',
 ]
 
-test('maps every MVP phrase to one local asset', () => {
+test('maps every MVP phrase to local animation and fallback assets', () => {
   assert.deepEqual(SIGN_PHRASES.map((item) => item.phrase), EXPECTED_PHRASES)
   for (const item of SIGN_PHRASES) {
     assert.match(item.asset, /^\/signs\/[a-z-]+\.svg$/)
-    const assetUrl = new URL(`../public${item.asset}`, import.meta.url)
-    assert.equal(existsSync(fileURLToPath(assetUrl)), true)
+    assert.match(item.fallbackAsset, /^\/signs\/[a-z-]+\.svg$/)
+    assert.match(item.animationAsset, /^\/signs\/animations\/[a-z-]+\.animation\.svg$/)
+    for (const assetPath of [item.asset, item.fallbackAsset, item.animationAsset]) {
+      const assetUrl = new URL(`../public${assetPath}`, import.meta.url)
+      assert.equal(existsSync(fileURLToPath(assetUrl)), true)
+    }
     assert.equal(findSignRepresentation(item.phrase).id, item.id)
   }
 })

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Any questions animated sign cue</title>
+  <desc id="desc">A short looping illustration of a raised hand waving.</desc>
+  <rect width="640" height="360" rx="24" fill="#e7f6ee"/>
+  <circle cx="320" cy="118" r="55" fill="#ffd9b8"/>
+  <path d="M265 173c-28 18-40 47-37 80h184c3-33-11-62-37-80-16 12-33 18-51 18s-43-6-59-18Z" fill="#2b8b73"/>
+  <g>
+    <path d="M291 276c-10-16-15-34-15-58v-96c0-14 19-18 23-4l12 45 2-76c0-14 20-16 23-2l7 75 8-70c2-14 22-12 22 3l-3 79 14-59c4-13 23-8 21 6l-14 84c-9 57-37 87-84 87-14 0-27-5-36-14Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+    <animateTransform attributeName="transform" type="rotate" values="-10 320 215;10 320 215;-10 320 215" dur="1.8s" repeatCount="indefinite"/>
+  </g>
+  <text x="465" y="118" text-anchor="middle" font-family="Arial, sans-serif" font-size="84" font-weight="800" fill="#35664d">?
+    <animate attributeName="opacity" values=".45;1;.45" dur="1.2s" repeatCount="indefinite"/>
+  </text>
+  <rect x="180" y="314" width="280" height="30" rx="15" fill="#fff"/>
+  <text x="320" y="335" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1d563d">Any questions?</text>
+</svg>

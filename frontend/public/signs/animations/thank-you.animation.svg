@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Thank you animated sign cue</title>
+  <desc id="desc">A short looping illustration of two hands moving outward from the chest.</desc>
+  <rect width="640" height="360" rx="24" fill="#e7f6ee"/>
+  <circle cx="320" cy="118" r="55" fill="#ffd9b8"/>
+  <path d="M265 173c-28 18-40 47-37 80h184c3-33-11-62-37-80-16 12-33 18-51 18s-43-6-59-18Z" fill="#d88725"/>
+  <g>
+    <path d="M181 276c-4-14 14-23 21-10l29 54-4-76c-1-14 18-18 22-4l14 69 16-64c4-13 23-8 21 6l-13 71 27-47c7-12 24-2 18 11l-33 60c-15 27-34 40-60 40-29 0-49-20-49-52Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+    <animateTransform attributeName="transform" type="rotate" values="-5 320 230;5 320 230;-5 320 230" dur="2s" repeatCount="indefinite"/>
+  </g>
+  <g>
+    <path d="M459 276c4-14-14-23-21-10l-29 54 4-76c1-14-18-18-22-4l-14 69-16-64c-4-13-23-8-21 6l13 71-27-47c-7-12-24-2-18 11l33 60c15 27 34 40 60 40 29 0 49-20 49-52Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+    <animateTransform attributeName="transform" type="rotate" values="5 320 230;-5 320 230;5 320 230" dur="2s" repeatCount="indefinite"/>
+  </g>
+  <rect x="214" y="314" width="212" height="30" rx="15" fill="#fff"/>
+  <text x="320" y="335" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1d563d">Thank you</text>
+</svg>
