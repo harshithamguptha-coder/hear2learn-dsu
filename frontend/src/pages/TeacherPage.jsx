@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createSession, endSession, saveTranscript } from '../api/client'
 import TranscriptView from '../components/TranscriptView'
@@ -16,17 +16,32 @@ export default function TeacherPage() {
   const [actionError, setActionError] = useState('')
   const [busyAction, setBusyAction] = useState('')
   const [copied, setCopied] = useState(false)
+  const [manualText, setManualText] = useState('')
+
+  const sessionRef = useRef(session)
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
 
   const handleFinalText = useCallback(async (text) => {
-    if (!session || session.status !== 'active') return
+    const currentSession = sessionRef.current
+    console.log('[Teacher] handleFinalText called with text:', text, 'session:', currentSession)
+
+    if (!currentSession || currentSession.status !== 'active') {
+      console.warn('[Teacher] Ignored transcript: no active lecture session.')
+      return
+    }
 
     try {
-      const savedItem = await saveTranscript(session.session_id, text)
+      const savedItem = await saveTranscript(currentSession.session_id, text)
+      console.log('[Teacher] Transcript chunk saved to backend:', savedItem)
       setTranscript((current) => mergeItem(current, savedItem))
+      setActionError('')
     } catch (error) {
+      console.error('[Teacher] Error saving transcript:', error)
       setActionError(`Could not save transcript: ${error.message}`)
     }
-  }, [session])
+  }, [])
 
   const speech = useSpeechRecognition(handleFinalText)
 
@@ -36,6 +51,7 @@ export default function TeacherPage() {
     setCopied(false)
     try {
       const newSession = await createSession()
+      console.log('[Teacher] Created new lecture session:', newSession)
       setSession(newSession)
       setTranscript([])
     } catch (error) {
@@ -67,6 +83,14 @@ export default function TeacherPage() {
     } catch {
       setActionError('Could not copy the ID. Please select and copy it manually.')
     }
+  }
+
+  async function handleManualSubmit(e) {
+    e.preventDefault()
+    const text = manualText.trim()
+    if (!text) return
+    setManualText('')
+    await handleFinalText(text)
   }
 
   return (
@@ -122,6 +146,27 @@ export default function TeacherPage() {
             </button>
             <span className={`status-badge ${session.status}`}>{session.status}</span>
           </div>
+        )}
+
+        {session?.status === 'active' && (
+          <form className="manual-speech-form" onSubmit={handleManualSubmit}>
+            <label htmlFor="manual-speech-input" className="field-label">
+              Manual Speech Input (Type or Paste Speech)
+            </label>
+            <div className="manual-speech-row">
+              <input
+                id="manual-speech-input"
+                type="text"
+                value={manualText}
+                onChange={(e) => setManualText(e.target.value)}
+                placeholder="Type or paste lecture text (e.g. 'Today we are studying supervised learning...')"
+                autoComplete="off"
+              />
+              <button className="primary-button" type="submit" disabled={!manualText.trim()}>
+                Send Speech
+              </button>
+            </div>
+          </form>
         )}
 
         {!speech.supported && session?.status === 'active' && (

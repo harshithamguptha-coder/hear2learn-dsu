@@ -757,5 +757,37 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
   .qa-button {
     width: 100%;
   }
+  .manual-speech-row {
+    flex-direction: column;
+  }
 }
+
+.manual-speech-form {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--line);
+}
+
+.manual-speech-row {
+  display: flex;
+  gap: 12px;
+}
+
+.manual-speech-row input {
+  flex: 1;
+  min-height: 48px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid #b8c6da;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.96rem;
+}
+
+.manual-speech-row input:focus {
+  border-color: var(--blue);
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(36 95 193 / 15%);
+}
+
 
