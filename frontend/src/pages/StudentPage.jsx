@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext'
 import { useEffect, useRef, useState } from 'react'
 
 import { getLectureNotes, getSession, structureTranscript } from '../api/client'
@@ -8,6 +9,7 @@ import { useLectureContext } from '../context/LectureContext'
 import { useSessionStream } from '../hooks/useSessionStream'
 
 export default function StudentPage() {
+  const { user } = useAuth()
   const {
     studentInput: input,
     setStudentInput: setInput,
@@ -166,7 +168,7 @@ export default function StudentPage() {
         <div>
           <p className="eyebrow">Student workspace</p>
           <h1>Join a live lecture</h1>
-          <p>Enter the session ID from your teacher. No account is needed.</p>
+          <p>Welcome, {user?.name}. Enter the session ID from your teacher to join the live classroom.</p>
         </div>
         <span className="page-number" aria-hidden="true">02</span>
       </div>

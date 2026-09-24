@@ -8,8 +8,11 @@ features yet.
 
 ## What works
 
+- Persistent Teacher and Student accounts are stored in SQLite with scrypt-hashed passwords.
+- Teachers and students register, log in, and are redirected to role-specific dashboards.
+- Authenticated Teacher lectures store their title, Teacher owner, and start/end times in the existing session record.
 - A teacher can create a lecture with a unique session ID and end it.
-- A student can validate and join that ID without an account.
+- A student can validate and join that ID after logging in.
 - The teacher can turn on browser microphone capture.
 - The Web Speech API converts speech to text through the browser.
 - Finalized text is sent to FastAPI, saved in SQLite, and broadcast with SSE.
@@ -27,12 +30,14 @@ features yet.
 ```text
 backend/
   app/
-    api.py                  # Lecture, transcript, and SSE routes
+    auth_api.py              # Register, login, and role protection
+    api.py                  # Authenticated lecture creation, transcript, and SSE routes
     translation_api.py      # Session-scoped translation endpoint
     notes_api.py            # Session-scoped lecture notes endpoint
     database.py             # SQLite connection and schema
     models.py               # Request/response schemas
     services/
+      auth_service.py      # Password hashing, users, and signed bearer tokens
       session_service.py   # Session and transcript storage
       notes_service.py     # Deterministic extractive notes generation
       translation_service.py # Replaceable external translation provider
@@ -72,9 +77,9 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** in a current Chrome or Edge browser. Visit
-`/teacher` to start a lecture, then visit `/student` (in another tab or browser)
-and enter the displayed session ID.
+Open **http://localhost:5173** in a current Chrome or Edge browser. Register or
+log in first, then visit `/teacher` or `/student`. Teachers can start a lecture;
+Students can join using the displayed session ID.
 
 The Vite development server proxies `/api` to the backend, so the two processes
 work on their default ports without extra configuration.
@@ -137,6 +142,21 @@ short summary, main topics, key points, and important terms. Transcripts below
 receive a session-ended SSE event and load the notes without refreshing, while
 the full translated and signed transcript remains below the notes card.
 
+## Authentication notes
+
+Accounts are stored in the default SQLite database at `backend/classroom.db`.
+Passwords are hashed with Python's built-in `scrypt`; plaintext passwords are
+never stored or returned. Login tokens are short-lived bearer tokens kept in
+browser `localStorage`. For a stable login session across backend restarts,
+set an environment variable before starting Uvicorn:
+
+```powershell
+$env:AUTH_SECRET = "replace-this-with-a-long-random-secret"
+```
+
+If `AUTH_SECRET` is not set, the development server generates a new secret at
+startup, so existing login tokens are invalidated when the backend restarts.
+
 ## Data location
 
 The default database is `backend/classroom.db`. To use another path, set
@@ -148,7 +168,11 @@ local lecture and transcript data.
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Check backend health |
-| `POST` | `/api/sessions` | Start a lecture |
+| `POST` | `/api/auth/register` | Create a persistent Teacher or Student account |
+| `POST` | `/api/auth/login` | Log in and receive a bearer token |
+| `GET` | `/api/auth/me` | Read the logged-in account |
+| `POST` | `/api/lectures` | Create a Teacher-owned lecture |
+| `POST` | `/api/sessions` | Start a backward-compatible foundation lecture |
 | `GET` | `/api/sessions/{session_id}` | Validate/join a lecture |
 | `POST` | `/api/sessions/{session_id}/end` | End a lecture |
 | `GET` | `/api/sessions/{session_id}/transcript` | Read saved transcript |

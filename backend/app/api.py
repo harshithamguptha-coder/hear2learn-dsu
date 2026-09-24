@@ -8,8 +8,10 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from .auth_api import require_teacher
 from .database import get_db
 from .models import (
+    LectureCreate,
     LectureQARequest,
     LectureQAResponse,
     SessionResponse,
@@ -38,12 +40,27 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.post("/lectures", response_model=SessionResponse, status_code=201)
+def create_authenticated_lecture(
+    payload: LectureCreate,
+    teacher: dict = Depends(require_teacher),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Create a persistent lecture linked to the logged-in Teacher."""
+    return session_service.create_session(
+        db,
+        teacher_id=teacher["id"],
+        title=payload.title,
+    )
+
+
 @router.post(
     "/sessions",
     response_model=SessionResponse,
     status_code=201,
 )
 def create_session(db: sqlite3.Connection = Depends(get_db)) -> dict:
+    """Backward-compatible public foundation endpoint for existing clients."""
     return session_service.create_session(db)
 
 
