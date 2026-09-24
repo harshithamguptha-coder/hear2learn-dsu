@@ -81,8 +81,9 @@ export default function StudentPage() {
     const fullText = transcript.map((item) => item.text).join(' ').trim()
     if (!fullText) return
 
-    if (fullText === lastStructuredTextRef.current || fullText === studentLastStructuredText) return
+    if (structuredData && (fullText === lastStructuredTextRef.current || fullText === studentLastStructuredText)) return
 
+    const delay = structuredData ? 1500 : 250
     const timer = setTimeout(async () => {
       setStructuring(true)
       try {
@@ -96,12 +97,13 @@ export default function StudentPage() {
       } finally {
         setStructuring(false)
       }
-    }, 1500)
+    }, delay)
 
     return () => clearTimeout(timer)
   }, [
     session?.session_id,
     transcript,
+    structuredData,
     setStructuredData,
     setStructureError,
     studentLastStructuredText,
