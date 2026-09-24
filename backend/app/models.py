@@ -39,6 +39,27 @@ class TranscriptStructureRequest(BaseModel):
     text: str | None = Field(default=None, max_length=50_000)
 
 
+class TopicSegment(BaseModel):
+    topic: str
+    timestamp: str | None = None
+
+
+class DefinitionItem(BaseModel):
+    term: str
+    definition: str
+
+
+class ExampleItem(BaseModel):
+    concept: str
+    example: str
+
+
+class ImportantMomentItem(BaseModel):
+    type: str
+    content: str
+    timestamp: str | None = None
+
+
 class StructuredTranscriptResponse(BaseModel):
     clean_text: str
     topic: str
@@ -48,6 +69,11 @@ class StructuredTranscriptResponse(BaseModel):
     numbers: list[str] = Field(default_factory=list)
     formulas: list[str] = Field(default_factory=list)
     speaker_segments: list[SpeakerSegment] = Field(default_factory=list)
+    topic_history: list[TopicSegment] = Field(default_factory=list)
+    important_points: list[str] = Field(default_factory=list)
+    definitions: list[DefinitionItem] = Field(default_factory=list)
+    examples: list[ExampleItem] = Field(default_factory=list)
+    important_moments: list[ImportantMomentItem] = Field(default_factory=list)
 
 
 class LectureQARequest(BaseModel):

@@ -58,6 +58,21 @@ class MockSuccessProvider(AIProvider):
                     "timestamp": None,
                 }
             ],
+            "topic_history": [
+                {"topic": "Physics and Machine Learning", "timestamp": None}
+            ],
+            "important_points": [
+                "Force equals mass times acceleration."
+            ],
+            "definitions": [
+                {"term": "Force", "definition": "Mass times acceleration."}
+            ],
+            "examples": [
+                {"concept": "Newton's Second Law", "example": "10 kg payload accelerating"}
+            ],
+            "important_moments": [
+                {"type": "formula", "content": "F = ma", "timestamp": None}
+            ],
         }
 
     async def answer_question(self, question: str, lecture_text: str):
@@ -429,3 +444,205 @@ def test_existing_numbers_and_formulas_still_work():
     assert any("9.81 m/s\u00b2" in n for n in numbers)
     assert any("10 students" in n for n in numbers)
     assert "F = ma" in result["formulas"]
+
+
+# 18. Dynamic current topic tracking and transitions
+def test_step6_current_topic_tracking_and_transitions():
+    provider = HeuristicAIProvider()
+
+    # Initial topic
+    initial_text = "Today we will learn supervised learning. It uses labeled datasets to train models."
+    result1 = asyncio.run(provider.structure_transcript(initial_text))
+    assert result1["topic"] == "Supervised Learning"
+    assert len(result1["topic_history"]) == 1
+    assert result1["topic_history"][0]["topic"] == "Supervised Learning"
+
+    # Lecture progression with topic transition
+    transition_text = (
+        "Today we will learn supervised learning. Now let's move to classification. "
+        "Classification predicts discrete classes. Next we will discuss regression."
+    )
+    result2 = asyncio.run(provider.structure_transcript(transition_text))
+    assert result2["topic"] == "Regression"
+    history_topics = [h["topic"] for h in result2["topic_history"]]
+    assert history_topics == ["Supervised Learning", "Classification", "Regression"]
+
+
+# 19. Topic history preservation and null timestamps
+def test_step6_topic_history_preservation():
+    provider = HeuristicAIProvider()
+    raw = (
+        "Today we are going to study neural networks. "
+        "Moving on to backpropagation algorithm. "
+        "Next we will discuss gradient descent."
+    )
+    result = asyncio.run(provider.structure_transcript(raw))
+    history = result["topic_history"]
+    assert len(history) == 3
+    for segment in history:
+        assert isinstance(segment["topic"], str)
+        assert segment["timestamp"] is None  # Does not invent timestamps
+
+
+# 20. Important point extraction with emphasis phrases
+def test_step6_important_point_extraction():
+    provider = HeuristicAIProvider()
+    raw = (
+        "Today we study machine learning. "
+        "Remember that classification predicts discrete categories. "
+        "We also spoke about different algorithms yesterday. "
+        "Keep in mind that regression predicts continuous values. "
+        "Most importantly, data cleanliness directly impacts model performance."
+    )
+    result = asyncio.run(provider.structure_transcript(raw))
+    points = result["important_points"]
+    assert len(points) >= 2
+    assert any("classification predicts discrete categories" in p.lower() for p in points)
+    assert any("regression predicts continuous values" in p.lower() for p in points)
+    # General statement without emphasis should not be in important_points
+    assert not any("yesterday" in p.lower() for p in points)
+
+
+# 21. Explicit definition extraction without hallucination
+def test_step6_definition_extraction():
+    provider = HeuristicAIProvider()
+    raw = (
+        "Today we study computer science algorithms. "
+        "An algorithm is a step-by-step procedure for solving a problem. "
+        "Supervised learning refers to training a model using labeled dataset examples."
+    )
+    result = asyncio.run(provider.structure_transcript(raw))
+    definitions = result["definitions"]
+    assert len(definitions) >= 1
+    term_names = [d["term"] for d in definitions]
+    assert "Algorithm" in term_names
+    algo_def = next(d for d in definitions if d["term"] == "Algorithm")
+    assert "step-by-step procedure" in algo_def["definition"].lower()
+
+
+# 22. Educational example extraction
+def test_step6_example_extraction():
+    provider = HeuristicAIProvider()
+    raw = (
+        "We are covering machine learning applications. "
+        "For example, spam detection is a classification problem. "
+        "An example of regression is predicting house prices."
+    )
+    result = asyncio.run(provider.structure_transcript(raw))
+    examples = result["examples"]
+    assert len(examples) >= 2
+    concepts = [ex["concept"].lower() for ex in examples]
+    assert "classification" in concepts
+    assert "regression" in concepts
+    spam_ex = next(ex for ex in examples if ex["concept"].lower() == "classification")
+    assert "spam detection" in spam_ex["example"].lower()
+
+
+# 23. Key review moments extraction with categories
+def test_step6_important_moments_extraction():
+    provider = HeuristicAIProvider()
+    raw = (
+        "Today we will learn physics. "
+        "An algorithm is a step-by-step procedure for solving a problem. "
+        "Force equals mass times acceleration. "
+        "Remember that classification predicts discrete categories. "
+        "For example, spam detection is a classification problem. "
+        "Be careful not to confuse training data with test data."
+    )
+    result = asyncio.run(provider.structure_transcript(raw))
+    moments = result["important_moments"]
+    assert len(moments) >= 4
+    types = {m["type"] for m in moments}
+    assert "definition" in types
+    assert "formula" in types
+    assert "important_point" in types
+    assert "example" in types
+    assert "warning" in types
+    for m in moments:
+        assert m["timestamp"] is None
+
+
+# 24. Full response schema via public API
+def test_step6_full_response_schema_via_api(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Today we will learn supervised learning. An algorithm is a step-by-step procedure for solving a problem."},
+    )
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Now let's move to classification. Remember that classification predicts discrete categories. For example, spam detection is a classification problem. F = ma."},
+    )
+
+    response = client.post(f"/api/sessions/{session_id}/structure")
+    assert response.status_code == 200
+    data = response.json()
+
+    # All 13 fields present in the response
+    expected_fields = [
+        "clean_text", "topic", "key_points", "concepts", "technical_terms",
+        "numbers", "formulas", "speaker_segments", "topic_history",
+        "important_points", "definitions", "examples", "important_moments"
+    ]
+    for field in expected_fields:
+        assert field in data, f"Missing field: {field}"
+
+    assert data["topic"] == "Classification"
+    assert len(data["topic_history"]) == 2
+    assert len(data["important_points"]) >= 1
+    assert len(data["definitions"]) >= 1
+    assert len(data["examples"]) >= 1
+    assert len(data["important_moments"]) >= 1
+
+
+# 25. Step 6 session isolation
+def test_step6_session_isolation(client):
+    # Session 1: Machine Learning
+    s1 = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{s1}/transcript",
+        json={"text": "Today we will learn supervised learning. An algorithm is a step-by-step procedure for solving a problem. For example, spam detection is a classification problem."},
+    )
+
+    # Session 2: Physics
+    s2 = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{s2}/transcript",
+        json={"text": "Today we will learn thermodynamics. Temperature is a measure of average kinetic energy. Force equals mass times acceleration."},
+    )
+
+    r1 = client.post(f"/api/sessions/{s1}/structure").json()
+    r2 = client.post(f"/api/sessions/{s2}/structure").json()
+
+    # Verify session 1 contains only ML intelligence
+    assert "Supervised Learning" in r1["topic_history"][0]["topic"]
+    assert any(d["term"] == "Algorithm" for d in r1["definitions"])
+    assert not any("thermodynamics" in h["topic"].lower() for h in r1["topic_history"])
+
+    # Verify session 2 contains only Physics intelligence
+    assert "Thermodynamics" in r2["topic_history"][0]["topic"]
+    assert any(d["term"] == "Temperature" for d in r2["definitions"])
+    assert not any("algorithm" in d["term"].lower() for d in r2["definitions"])
+
+
+# 26. Heuristic fallback offline operation
+def test_step6_heuristic_fallback_offline():
+    provider = HeuristicAIProvider()
+    lecture = (
+        "Today we will learn database systems. "
+        "A primary key is a unique identifier for a database record. "
+        "Remember that primary keys cannot contain null values. "
+        "For example, student id is a primary key application. "
+        "Be careful not to delete tables without a backup."
+    )
+    result = asyncio.run(provider.structure_transcript(lecture))
+
+    assert result["topic"] == "Database Systems"
+    assert len(result["topic_history"]) == 1
+    assert len(result["important_points"]) >= 1
+    assert any("primary key" in d["term"].lower() for d in result["definitions"])
+    assert len(result["examples"]) >= 1
+    assert len(result["important_moments"]) >= 3
+

@@ -49,11 +49,28 @@ Follow these strict rules:
    - NEVER guess or invent speaker identity based on conversational style alone.
 12. Keep all technical terms, formulas, numbers, and domain terminology intact.
 13. NEVER invent information that was not present in the transcript.
+14. CURRENT TOPIC & TOPIC HISTORY:
+   - Dynamically identify the current active topic being taught. Distinguish between previous topics and topic transitions (e.g. "Today we will learn supervised learning", "Now let's move to classification").
+   - "topic" must hold the CURRENT active topic.
+   - "topic_history" must contain the chronological list of topics covered so far, e.g. [{"topic": "Supervised Learning", "timestamp": null}, {"topic": "Classification", "timestamp": null}].
+   - Do NOT invent timestamps if not present in the transcript (use null).
+15. IMPORTANT POINTS:
+   - Identify statements explicitly emphasized by the lecturer (e.g. "Remember that...", "An important point is...", "Note that...", "The key difference is...", "Keep in mind...", "This is important...", "Most importantly...", "Do not forget...").
+   - Do NOT simply duplicate every general key point; capture explicitly emphasized educational takeaways.
+16. DEFINITIONS:
+   - Extract clear, explicit definitions spoken in the lecture (e.g. "An algorithm is a step-by-step procedure for solving a problem." -> term: "Algorithm", definition: "A step-by-step procedure for solving a problem.").
+   - Do NOT hallucinate definitions from outside knowledge.
+17. EXAMPLES:
+   - Extract concrete examples mentioned in the lecture (e.g. "For example, spam detection is a classification problem." -> concept: "Classification", example: "Spam detection").
+   - Only include examples actually mentioned in the lecture.
+18. IMPORTANT MOMENTS:
+   - Extract review-worthy moments categorized by type: "definition", "formula", "important_point", "example", "concept", "warning".
+   - Each moment must follow: {"type": "definition", "content": "...", "timestamp": null}. Do NOT invent timestamps.
 
 You must respond with ONLY a valid JSON object matching this schema:
 {
   "clean_text": "Cleaned, structured lecture text with fillers removed and clear formatting",
-  "topic": "Concise subject or topic title",
+  "topic": "Current active topic title",
   "key_points": [
     "Key takeaway or point 1",
     "Key takeaway or point 2"
@@ -77,6 +94,38 @@ You must respond with ONLY a valid JSON object matching this schema:
     {
       "speaker": "Teacher",
       "text": "Segment text here",
+      "timestamp": null
+    }
+  ],
+  "topic_history": [
+    {
+      "topic": "Previous or initial topic",
+      "timestamp": null
+    },
+    {
+      "topic": "Current topic",
+      "timestamp": null
+    }
+  ],
+  "important_points": [
+    "Emphasized educational statement"
+  ],
+  "definitions": [
+    {
+      "term": "Term",
+      "definition": "Explicit definition"
+    }
+  ],
+  "examples": [
+    {
+      "concept": "Concept Name",
+      "example": "Concrete example mentioned"
+    }
+  ],
+  "important_moments": [
+    {
+      "type": "definition",
+      "content": "Algorithm: A step-by-step procedure...",
       "timestamp": null
     }
   ]
@@ -220,13 +269,19 @@ class HeuristicAIProvider(AIProvider):
 
     async def structure_transcript(self, text: str) -> dict[str, Any]:
         cleaned = self._clean_text(text)
-        topic = self._infer_topic(cleaned)
+        topic, topic_history = self._infer_topic_and_history(cleaned)
         key_points = self._extract_key_points(cleaned)
         concepts = self._extract_concepts(cleaned, topic)
         technical_terms = self._extract_technical_terms(cleaned)
         numbers = self._extract_numbers(cleaned)
         formulas = self._extract_formulas(text + " " + cleaned)
         speaker_segments = self._attribute_speakers(text, cleaned)
+        important_points = self._extract_important_points(cleaned)
+        definitions = self._extract_definitions(cleaned)
+        examples = self._extract_examples(cleaned, topic)
+        important_moments = self._extract_important_moments(
+            definitions, formulas, important_points, examples, cleaned
+        )
 
         return {
             "clean_text": cleaned,
@@ -237,6 +292,11 @@ class HeuristicAIProvider(AIProvider):
             "numbers": numbers,
             "formulas": formulas,
             "speaker_segments": speaker_segments,
+            "topic_history": topic_history,
+            "important_points": important_points,
+            "definitions": definitions,
+            "examples": examples,
+            "important_moments": important_moments,
         }
 
     async def answer_question(self, question: str, lecture_text: str) -> dict[str, Any]:
@@ -378,33 +438,82 @@ class HeuristicAIProvider(AIProvider):
 
         return " ".join(formatted_sentences)
 
-    def _infer_topic(self, text: str) -> str:
-        patterns = [
-            r"today we are (?:going to )?(?:study|discuss|learn|focus on) (?:the )?(?:concept of )?([^.,!?;]+)",
-            r"today's lecture is about ([^.,!?;]+)",
-            r"we are covering ([^.,!?;]+)",
-            r"let us discuss ([^.,!?;]+)",
-            r"introduction to ([^.,!?;]+)",
+    @staticmethod
+    def _clean_topic_phrase(raw: str) -> str:
+        cleaned = re.sub(
+            r"^(?:the\s+concept\s+of|concept\s+of|the\s+topic\s+of|topic\s+of|the|a|an)\s+",
+            "",
+            raw.strip(),
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"[.,!?;:]+$", "", cleaned).strip()
+        cleaned = re.split(r"\s+(?:where|which|because|as|and\s+then)\b", cleaned, flags=re.IGNORECASE)[0]
+        words = [w.capitalize() for w in cleaned.split() if w.lower() not in {"a", "an", "the", "in", "of", "and", "to", "for"}]
+        words = words[:5]
+        return " ".join(words) if words else cleaned.title()
+
+    def _infer_topic_and_history(self, text: str) -> tuple[str, list[dict[str, Any]]]:
+        topic_intro_patterns = [
+            r"\btoday(?:\s+we\s+are|\s+we\s+will|\s+we'll|\s+we)\s+(?:going\s+to\s+)?(?:study|discuss|learn|focus\s+on|cover|explore)\s+(?:the\s+)?(?:concept\s+of\s+)?([^.,!?;]+)",
+            r"\btoday's\s+lecture\s+is\s+about\s+([^.,!?;]+)",
+            r"\bwe\s+are\s+covering\s+([^.,!?;]+)",
+            r"\blet\s+us\s+discuss\s+([^.,!?;]+)",
+            r"\bintroduction\s+to\s+([^.,!?;]+)",
+            r"\bwelcome\s+to\s+(?:today's\s+lecture\s+on\s+)?([^.,!?;]+)",
         ]
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                raw_topic = match.group(1).strip()
-                words = [w.capitalize() for w in raw_topic.split() if w.lower() not in {"a", "an", "the", "in", "of", "and"}]
+        topic_transition_patterns = [
+            r"(?:now\s+let's|now\s+we|let's|let\s+us)\s+move\s+(?:on\s+)?to\s+([^.,!?;]+)",
+            r"(?:moving\s+on\s+to|turning\s+to)\s+([^.,!?;]+)",
+            r"(?:next\s+we\s+will|next\s+we'll|next\s+we\s+are\s+going\s+to|next\s+let's)\s+(?:discuss|cover|study|look\s+at)\s+([^.,!?;]+)",
+            r"(?:our\s+next\s+topic\s+is|next\s+topic\s+is|next\s+concept\s+is)\s+([^.,!?;]+)",
+            r"(?:now\s+let's\s+discuss|now\s+we\s+discuss)\s+([^.,!?;]+)",
+        ]
+
+        found_mentions: list[tuple[int, str]] = []
+
+        for pat in topic_intro_patterns:
+            for match in re.finditer(pat, text, re.IGNORECASE):
+                topic_str = self._clean_topic_phrase(match.group(1))
+                if topic_str and len(topic_str) >= 3:
+                    found_mentions.append((match.start(), topic_str))
+
+        for pat in topic_transition_patterns:
+            for match in re.finditer(pat, text, re.IGNORECASE):
+                topic_str = self._clean_topic_phrase(match.group(1))
+                if topic_str and len(topic_str) >= 3:
+                    found_mentions.append((match.start(), topic_str))
+
+        found_mentions.sort(key=lambda x: x[0])
+
+        topic_sequence: list[str] = []
+        for _, topic_name in found_mentions:
+            if not topic_sequence or topic_sequence[-1].lower() != topic_name.lower():
+                topic_sequence.append(topic_name)
+
+        if not topic_sequence:
+            for term in self.COMMON_TECHNICAL_KEYWORDS:
+                if re.search(r"\b" + re.escape(term) + r"\b", text, re.IGNORECASE):
+                    topic_sequence.append(" ".join(word.capitalize() for word in term.split()))
+                    break
+
+        if not topic_sequence:
+            first_sentence = text.split(".")[0]
+            if first_sentence:
+                words = [w for w in first_sentence.split() if len(w) > 3][:4]
                 if words:
-                    return " ".join(words)
+                    topic_sequence.append(" ".join(w.capitalize() for w in words))
 
-        for term in self.COMMON_TECHNICAL_KEYWORDS:
-            if re.search(r"\b" + re.escape(term) + r"\b", text, re.IGNORECASE):
-                return " ".join(word.capitalize() for word in term.split())
+        if not topic_sequence:
+            topic_sequence = ["Classroom Lecture"]
 
-        first_sentence = text.split(".")[0]
-        if first_sentence:
-            words = [w for w in first_sentence.split() if len(w) > 3][:4]
-            if words:
-                return " ".join(w.capitalize() for w in words)
+        current_topic = topic_sequence[-1]
+        topic_history = [{"topic": t, "timestamp": None} for t in topic_sequence]
 
-        return "Classroom Lecture"
+        return current_topic, topic_history
+
+    def _infer_topic(self, text: str) -> str:
+        current_topic, _ = self._infer_topic_and_history(text)
+        return current_topic
 
     def _extract_key_points(self, text: str) -> list[str]:
         sentences = [s.strip() for s in text.split(".") if len(s.strip()) > 15]
@@ -540,6 +649,310 @@ class HeuristicAIProvider(AIProvider):
             }
         ]
 
+    def _extract_important_points(self, text: str) -> list[str]:
+        emphasis_patterns = [
+            r"\b(?:remember\s+that|remember)\b",
+            r"\b(?:an\s+important\s+point\s+is|important\s+point(?::|\s+is))\b",
+            r"\b(?:note\s+that|please\s+note\s+that|it\s+is\s+worth\s+noting\s+that)\b",
+            r"\b(?:the\s+key\s+difference\s+is|key\s+difference(?::|\s+is))\b",
+            r"\b(?:keep\s+in\s+mind(?:\s+that)?)\b",
+            r"\b(?:this\s+is\s+important|it\s+is\s+important\s+(?:to\s+note\s+that|that)?)\b",
+            r"\b(?:most\s+importantly|crucial\s+point\s+is|crucial\s+to\s+note)\b",
+            r"\b(?:do\s+not\s+forget(?:\s+that)?|don't\s+forget(?:\s+that)?)\b",
+            r"\b(?:pay\s+special\s+attention\s+to|pay\s+attention\s+to)\b",
+        ]
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+        points: list[str] = []
+        seen = set()
+
+        for s in sentences:
+            s_clean = re.sub(r"^(?:Teacher|Student|Unknown)\s*:\s*", "", s, flags=re.IGNORECASE).strip()
+            if any(re.search(pat, s_clean, re.IGNORECASE) for pat in emphasis_patterns):
+                cleaned_point = re.sub(
+                    r"^(?:remember\s+that|remember\s*,?|an\s+important\s+point\s+is\s+that|an\s+important\s+point\s+is|important\s+point\s*:\s*|note\s+that|please\s+note\s+that|keep\s+in\s+mind\s+that|keep\s+in\s+mind\s*,?|most\s+importantly\s*,?|do\s+not\s+forget\s+that|do\s+not\s+forget\s*,?|don't\s+forget\s+that|don't\s+forget\s*,?)\s*",
+                    "",
+                    s_clean,
+                    flags=re.IGNORECASE,
+                ).strip()
+                if cleaned_point and len(cleaned_point) >= 10:
+                    cleaned_point = cleaned_point[0].upper() + cleaned_point[1:]
+                    if not cleaned_point.endswith((".", "!", "?")):
+                        cleaned_point += "."
+                    if cleaned_point.lower() not in seen:
+                        seen.add(cleaned_point.lower())
+                        points.append(cleaned_point)
+
+        return points[:6]
+
+    def _extract_definitions(self, text: str) -> list[dict[str, str]]:
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+        definitions: list[dict[str, str]] = []
+        seen_terms = set()
+        excluded_terms = {
+            "this", "that", "it", "there", "here", "what", "which", "who", "today",
+            "today's lecture", "the goal", "the idea", "an example", "for example",
+            "one example", "remember", "note", "next", "one thing", "another thing",
+            "he", "she", "we", "they", "you",
+        }
+
+        for s in sentences:
+            s_clean = re.sub(r"^(?:Teacher|Student|Unknown)\s*:\s*", "", s, flags=re.IGNORECASE).strip()
+            # Pattern 1: <Term> is [defined as] a/an/the ...
+            m1 = re.search(
+                r"\b([A-Za-z][A-Za-z0-9\s\-]{1,30}?)\s+is\s+(?:defined\s+as\s+)?(a\s+[^.!?]+|an\s+[^.!?]+|the\s+[^.!?]+|defined\s+as\s+[^.!?]+)",
+                s_clean,
+                re.IGNORECASE,
+            )
+            if m1:
+                raw_term = m1.group(1).strip()
+                raw_def = m1.group(2).strip()
+                term = re.sub(r"^(?:a|an|the)\s+", "", raw_term, flags=re.IGNORECASE).strip()
+                if term.lower() not in excluded_terms and len(term) >= 3 and len(raw_def) >= 10:
+                    term_cap = " ".join(w.capitalize() for w in term.split())
+                    def_clean = re.sub(r"^defined\s+as\s+", "", raw_def, flags=re.IGNORECASE).strip()
+                    def_clean = def_clean[0].upper() + def_clean[1:]
+                    if not def_clean.endswith((".", "!", "?")):
+                        def_clean += "."
+                    if term_cap.lower() not in seen_terms:
+                        seen_terms.add(term_cap.lower())
+                        definitions.append({"term": term_cap, "definition": def_clean})
+                    continue
+
+            # Pattern 2: <Term> refers to / means ...
+            m2 = re.search(
+                r"\b([A-Za-z][A-Za-z0-9\s\-]{1,30}?)\s+(?:refers\s+to|means)\s+([^.!?]+)",
+                s_clean,
+                re.IGNORECASE,
+            )
+            if m2:
+                raw_term = m2.group(1).strip()
+                raw_def = m2.group(2).strip()
+                term = re.sub(r"^(?:a|an|the)\s+", "", raw_term, flags=re.IGNORECASE).strip()
+                if term.lower() not in excluded_terms and len(term) >= 3 and len(raw_def) >= 10:
+                    term_cap = " ".join(w.capitalize() for w in term.split())
+                    def_clean = raw_def[0].upper() + raw_def[1:]
+                    if not def_clean.endswith((".", "!", "?")):
+                        def_clean += "."
+                    if term_cap.lower() not in seen_terms:
+                        seen_terms.add(term_cap.lower())
+                        definitions.append({"term": term_cap, "definition": def_clean})
+
+        return definitions[:6]
+
+    def _extract_examples(self, text: str, topic: str) -> list[dict[str, str]]:
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+        examples: list[dict[str, str]] = []
+        seen = set()
+
+        for s in sentences:
+            s_clean = re.sub(r"^(?:Teacher|Student|Unknown)\s*:\s*", "", s, flags=re.IGNORECASE).strip()
+            # Pattern A: For example / For instance, <example> is a <concept> problem/task/application
+            mA = re.search(
+                r"(?:for\s+example|for\s+instance)\s*,?\s*([^.!?]+?)\s+is\s+(?:an?\s+)?([A-Za-z0-9\s\-]+?)\s+(?:problem|task|application|example|method)\b",
+                s_clean,
+                re.IGNORECASE,
+            )
+            if mA:
+                ex_text = mA.group(1).strip()
+                concept_text = mA.group(2).strip()
+                concept_cap = " ".join(w.capitalize() for w in concept_text.split())
+                ex_cap = ex_text[0].upper() + ex_text[1:]
+                key = (concept_cap.lower(), ex_cap.lower())
+                if key not in seen and len(ex_cap) >= 3:
+                    seen.add(key)
+                    examples.append({"concept": concept_cap, "example": ex_cap})
+                    continue
+
+            # Pattern B: An example of <concept> is <example>
+            mB = re.search(
+                r"(?:an\s+example\s+of|an\s+instance\s+of)\s+([A-Za-z0-9\s\-]+?)\s+is\s+([^.!?]+)",
+                s_clean,
+                re.IGNORECASE,
+            )
+            if mB:
+                concept_text = mB.group(1).strip()
+                ex_text = mB.group(2).strip()
+                concept_cap = " ".join(w.capitalize() for w in concept_text.split())
+                ex_cap = ex_text[0].upper() + ex_text[1:]
+                key = (concept_cap.lower(), ex_cap.lower())
+                if key not in seen and len(ex_cap) >= 3:
+                    seen.add(key)
+                    examples.append({"concept": concept_cap, "example": ex_cap})
+                    continue
+
+            # Pattern C: Generic "For example, <ex>" or "such as <ex>"
+            mC = re.search(
+                r"(?:for\s+example|for\s+instance|such\s+as)\s*,?\s*([^.!?]+)",
+                s_clean,
+                re.IGNORECASE,
+            )
+            if mC:
+                raw_ex = mC.group(1).strip()
+                concept_name = topic if topic and topic.lower() != "classroom lecture" else "General"
+                for kw in self.COMMON_TECHNICAL_KEYWORDS:
+                    if re.search(r"\b" + re.escape(kw) + r"\b", s_clean, re.IGNORECASE):
+                        concept_name = " ".join(w.capitalize() for w in kw.split())
+                        break
+                ex_cap = raw_ex[0].upper() + raw_ex[1:]
+                key = (concept_name.lower(), ex_cap.lower())
+                if key not in seen and len(ex_cap) >= 3:
+                    seen.add(key)
+                    examples.append({"concept": concept_name, "example": ex_cap})
+
+        return examples[:6]
+
+    def _extract_important_moments(
+        self,
+        definitions: list[dict[str, str]],
+        formulas: list[str],
+        important_points: list[str],
+        examples: list[dict[str, str]],
+        text: str,
+    ) -> list[dict[str, Any]]:
+        moments: list[dict[str, Any]] = []
+        seen = set()
+
+        # Definitions
+        for d in definitions:
+            content = f"{d['term']}: {d['definition']}"
+            if content.lower() not in seen:
+                seen.add(content.lower())
+                moments.append({
+                    "type": "definition",
+                    "content": content,
+                    "timestamp": None,
+                })
+
+        # Formulas
+        for f in formulas:
+            if f.lower() not in seen:
+                seen.add(f.lower())
+                moments.append({
+                    "type": "formula",
+                    "content": f,
+                    "timestamp": None,
+                })
+
+        # Important Points
+        for p in important_points:
+            if p.lower() not in seen:
+                seen.add(p.lower())
+                moments.append({
+                    "type": "important_point",
+                    "content": p,
+                    "timestamp": None,
+                })
+
+        # Examples
+        for ex in examples:
+            content = f"{ex['concept']} example: {ex['example']}"
+            if content.lower() not in seen:
+                seen.add(content.lower())
+                moments.append({
+                    "type": "example",
+                    "content": content,
+                    "timestamp": None,
+                })
+
+        # Warnings / Pitfalls
+        warning_pattern = r"\b(?:be\s+careful\s+not\s+to|be\s+careful\s+when|watch\s+out\s+for|a\s+common\s+mistake\s+is|common\s+pitfall|do\s+not\s+confuse|don't\s+confuse|warning\s*:|caution\s*:)\b"
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+        for s in sentences:
+            s_clean = re.sub(r"^(?:Teacher|Student|Unknown)\s*:\s*", "", s, flags=re.IGNORECASE).strip()
+            if re.search(warning_pattern, s_clean, re.IGNORECASE):
+                if s_clean.lower() not in seen:
+                    seen.add(s_clean.lower())
+                    moments.append({
+                        "type": "warning",
+                        "content": s_clean,
+                        "timestamp": None,
+                    })
+
+        return moments[:10]
+
+
+def _parse_structured_json(parsed: dict[str, Any], fallback_text: str) -> dict[str, Any]:
+    segments = []
+    for seg in parsed.get("speaker_segments", []):
+        if isinstance(seg, dict):
+            speaker = seg.get("speaker")
+            if speaker not in ("Teacher", "Student", "Unknown"):
+                speaker = "Unknown"
+            segments.append({
+                "speaker": speaker,
+                "text": str(seg.get("text", "")).strip(),
+                "timestamp": seg.get("timestamp"),
+            })
+    if not segments and fallback_text.strip():
+        segments = [{"speaker": "Teacher", "text": fallback_text.strip(), "timestamp": None}]
+
+    topic_str = str(parsed.get("topic", "Lecture Notes")).strip()
+
+    topic_history_raw = parsed.get("topic_history", [])
+    topic_history = []
+    if isinstance(topic_history_raw, list):
+        for th in topic_history_raw:
+            if isinstance(th, dict) and th.get("topic"):
+                topic_history.append({
+                    "topic": str(th["topic"]).strip(),
+                    "timestamp": th.get("timestamp"),
+                })
+    if not topic_history and topic_str:
+        topic_history = [{"topic": topic_str, "timestamp": None}]
+
+    important_points = [
+        str(ip).strip()
+        for ip in parsed.get("important_points", [])
+        if str(ip).strip()
+    ]
+
+    definitions_raw = parsed.get("definitions", [])
+    definitions = []
+    if isinstance(definitions_raw, list):
+        for d in definitions_raw:
+            if isinstance(d, dict) and d.get("term") and d.get("definition"):
+                definitions.append({
+                    "term": str(d["term"]).strip(),
+                    "definition": str(d["definition"]).strip(),
+                })
+
+    examples_raw = parsed.get("examples", [])
+    examples = []
+    if isinstance(examples_raw, list):
+        for ex in examples_raw:
+            if isinstance(ex, dict) and ex.get("concept") and ex.get("example"):
+                examples.append({
+                    "concept": str(ex["concept"]).strip(),
+                    "example": str(ex["example"]).strip(),
+                })
+
+    important_moments_raw = parsed.get("important_moments", [])
+    important_moments = []
+    if isinstance(important_moments_raw, list):
+        for im in important_moments_raw:
+            if isinstance(im, dict) and im.get("type") and im.get("content"):
+                important_moments.append({
+                    "type": str(im["type"]).strip(),
+                    "content": str(im["content"]).strip(),
+                    "timestamp": im.get("timestamp"),
+                })
+
+    return {
+        "clean_text": str(parsed.get("clean_text", "")).strip(),
+        "topic": topic_str,
+        "key_points": [str(kp).strip() for kp in parsed.get("key_points", []) if str(kp).strip()],
+        "concepts": [str(c).strip() for c in parsed.get("concepts", []) if str(c).strip()],
+        "technical_terms": [str(t).strip() for t in parsed.get("technical_terms", []) if str(t).strip()],
+        "numbers": [str(n).strip() for n in parsed.get("numbers", []) if str(n).strip()],
+        "formulas": [str(f).strip() for f in parsed.get("formulas", []) if str(f).strip()],
+        "speaker_segments": segments,
+        "topic_history": topic_history,
+        "important_points": important_points,
+        "definitions": definitions,
+        "examples": examples,
+        "important_moments": important_moments,
+    }
+
 
 class GeminiAIProvider(AIProvider):
     """Google Gemini AI provider using generateContent REST API."""
@@ -621,30 +1034,7 @@ class GeminiAIProvider(AIProvider):
                 raise ValueError("No candidates returned from Gemini.")
             raw_json_str = candidates[0]["content"]["parts"][0]["text"]
             parsed = json.loads(raw_json_str)
-
-            segments = []
-            for seg in parsed.get("speaker_segments", []):
-                speaker = seg.get("speaker")
-                if speaker not in ("Teacher", "Student", "Unknown"):
-                    speaker = "Unknown"
-                segments.append({
-                    "speaker": speaker,
-                    "text": seg.get("text", "").strip(),
-                    "timestamp": seg.get("timestamp"),
-                })
-            if not segments and fallback_text.strip():
-                segments = [{"speaker": "Teacher", "text": fallback_text.strip(), "timestamp": None}]
-
-            return {
-                "clean_text": str(parsed.get("clean_text", "")).strip(),
-                "topic": str(parsed.get("topic", "Lecture Notes")).strip(),
-                "key_points": [str(kp).strip() for kp in parsed.get("key_points", []) if str(kp).strip()],
-                "concepts": [str(c).strip() for c in parsed.get("concepts", []) if str(c).strip()],
-                "technical_terms": [str(t).strip() for t in parsed.get("technical_terms", []) if str(t).strip()],
-                "numbers": [str(n).strip() for n in parsed.get("numbers", []) if str(n).strip()],
-                "formulas": [str(f).strip() for f in parsed.get("formulas", []) if str(f).strip()],
-                "speaker_segments": segments,
-            }
+            return _parse_structured_json(parsed, fallback_text)
         except (KeyError, json.JSONDecodeError, ValueError) as exc:
             raise AIStructuringError(f"Failed to parse Gemini structuring response: {exc}") from exc
 
@@ -738,30 +1128,7 @@ class OpenAIAIProvider(AIProvider):
         try:
             raw_json_str = response_data["choices"][0]["message"]["content"]
             parsed = json.loads(raw_json_str)
-
-            segments = []
-            for seg in parsed.get("speaker_segments", []):
-                speaker = seg.get("speaker")
-                if speaker not in ("Teacher", "Student", "Unknown"):
-                    speaker = "Unknown"
-                segments.append({
-                    "speaker": speaker,
-                    "text": seg.get("text", "").strip(),
-                    "timestamp": seg.get("timestamp"),
-                })
-            if not segments and fallback_text.strip():
-                segments = [{"speaker": "Teacher", "text": fallback_text.strip(), "timestamp": None}]
-
-            return {
-                "clean_text": str(parsed.get("clean_text", "")).strip(),
-                "topic": str(parsed.get("topic", "Lecture Notes")).strip(),
-                "key_points": [str(kp).strip() for kp in parsed.get("key_points", []) if str(kp).strip()],
-                "concepts": [str(c).strip() for c in parsed.get("concepts", []) if str(c).strip()],
-                "technical_terms": [str(t).strip() for t in parsed.get("technical_terms", []) if str(t).strip()],
-                "numbers": [str(n).strip() for n in parsed.get("numbers", []) if str(n).strip()],
-                "formulas": [str(f).strip() for f in parsed.get("formulas", []) if str(f).strip()],
-                "speaker_segments": segments,
-            }
+            return _parse_structured_json(parsed, fallback_text)
         except (KeyError, json.JSONDecodeError, ValueError) as exc:
             raise AIStructuringError(f"Failed to parse OpenAI structuring response: {exc}") from exc
 

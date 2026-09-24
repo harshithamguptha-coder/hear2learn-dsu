@@ -48,6 +48,11 @@ export default function StructuredLectureView({
     numbers = [],
     formulas = [],
     speaker_segments = [],
+    topic_history = [],
+    important_points = [],
+    definitions = [],
+    examples = [],
+    important_moments = [],
   } = structuredData || {}
 
   const getSpeakerBadge = (speaker) => {
@@ -78,15 +83,37 @@ export default function StructuredLectureView({
       <header className="structured-header">
         <div className="structured-title-group">
           <div className="structured-eyebrow-row">
-            <span className="badge ai-badge">AI Structured View</span>
+            <span className="badge ai-badge">AI Classroom Intelligence</span>
             {loading && <span className="structuring-indicator" role="status">Updating notes…</span>}
           </div>
           {topic ? (
             <h2 className="lecture-topic">{topic}</h2>
           ) : (
-            <h2 className="lecture-topic placeholder">Live Lecture Notes</h2>
+            <h2 className="lecture-topic placeholder">Live Lecture Intelligence</h2>
           )}
         </div>
+
+        {/* Dynamic Topic History / Progression */}
+        {topic_history && topic_history.length > 0 && (
+          <nav className="topic-progression-bar" aria-label="Lecture Topic Progression">
+            <span className="topic-progression-label">Topics:</span>
+            <div className="topic-progression-pills">
+              {topic_history.map((seg, idx) => {
+                const isCurrent = idx === topic_history.length - 1
+                return (
+                  <span
+                    key={idx}
+                    className={`topic-pill ${isCurrent ? 'active' : 'completed'}`}
+                    title={isCurrent ? 'Current active topic' : 'Previously discussed topic'}
+                  >
+                    {seg.topic}
+                    {isCurrent && <span className="active-dot" aria-hidden="true" />}
+                  </span>
+                )
+              })}
+            </div>
+          </nav>
+        )}
       </header>
 
       {error && (
@@ -125,6 +152,26 @@ export default function StructuredLectureView({
         </article>
       )}
 
+      {/* Important Emphasized Points */}
+      {important_points && important_points.length > 0 && (
+        <article className="structured-section important-points-section" aria-labelledby="important-points-title">
+          <div className="section-title-row">
+            <h3 id="important-points-title">
+              <span className="section-title-icon" aria-hidden="true">💡</span> Important Points
+            </h3>
+            <span className="section-meta-pill highlight">Teacher Emphasized</span>
+          </div>
+          <ul className="important-points-list">
+            {important_points.map((point, idx) => (
+              <li key={idx} className="important-point-item">
+                <span className="important-bullet" aria-hidden="true">★</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+      )}
+
       {/* Clean Educational Text */}
       {clean_text && (
         <article className="structured-section clean-text-section" aria-labelledby="clean-text-title">
@@ -132,6 +179,46 @@ export default function StructuredLectureView({
           <div className="clean-lecture-body">
             {clean_text.split('\n\n').map((paragraph, idx) => (
               <p key={idx}>{paragraph}</p>
+            ))}
+          </div>
+        </article>
+      )}
+
+      {/* Definitions */}
+      {definitions && definitions.length > 0 && (
+        <article className="structured-section definitions-section" aria-labelledby="definitions-title">
+          <div className="section-title-row">
+            <h3 id="definitions-title">
+              <span className="section-title-icon" aria-hidden="true">📖</span> Definitions
+            </h3>
+            <span className="section-meta-pill">{definitions.length} term{definitions.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="definitions-grid">
+            {definitions.map((item, idx) => (
+              <div key={idx} className="definition-card">
+                <strong className="definition-term">{item.term}</strong>
+                <p className="definition-desc">{item.definition}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+      )}
+
+      {/* Real-World Examples */}
+      {examples && examples.length > 0 && (
+        <article className="structured-section examples-section" aria-labelledby="examples-title">
+          <div className="section-title-row">
+            <h3 id="examples-title">
+              <span className="section-title-icon" aria-hidden="true">🔬</span> Real-World Examples
+            </h3>
+            <span className="section-meta-pill">{examples.length} example{examples.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="examples-grid">
+            {examples.map((item, idx) => (
+              <div key={idx} className="example-card">
+                <span className="example-concept-pill">{item.concept}</span>
+                <p className="example-text">{item.example}</p>
+              </div>
             ))}
           </div>
         </article>
@@ -212,6 +299,33 @@ export default function StructuredLectureView({
             </article>
           )}
         </div>
+      )}
+
+      {/* Important Review Moments */}
+      {important_moments && important_moments.length > 0 && (
+        <article className="structured-section moments-section" aria-labelledby="moments-title">
+          <div className="section-title-row">
+            <h3 id="moments-title">
+              <span className="section-title-icon" aria-hidden="true">⭐</span> Key Review Moments
+            </h3>
+            <span className="section-meta-pill">Revision Log</span>
+          </div>
+          <div className="moments-list">
+            {important_moments.map((moment, idx) => (
+              <div key={idx} className={`moment-card type-${moment.type || 'general'}`}>
+                <div className="moment-card-header">
+                  <span className={`moment-type-badge ${moment.type || 'general'}`}>
+                    {moment.type ? moment.type.replace('_', ' ') : 'NOTE'}
+                  </span>
+                  {moment.timestamp && (
+                    <time className="moment-timestamp">{moment.timestamp}</time>
+                  )}
+                </div>
+                <p className="moment-content">{moment.content}</p>
+              </div>
+            ))}
+          </div>
+        </article>
       )}
 
       {/* Lecture-Grounded AI Q&A */}
