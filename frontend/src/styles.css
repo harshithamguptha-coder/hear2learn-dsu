@@ -19,9 +19,9 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, a:focus-visible, input:focus-visible {
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
   outline: 3px solid #f3a712;
   outline-offset: 3px;
 }
@@ -137,8 +137,12 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
 .join-card form > p { margin: 9px 0 0; color: var(--muted); font-size: 0.87rem; }
 
 .joined-session { display: flex; align-items: center; gap: 22px; margin: 0 0 22px; padding: 0 3px; }
-.joined-session > div { margin-right: auto; }
+.joined-session > div:first-child { margin-right: auto; }
 .joined-session h2 { margin-bottom: 0; font-size: 1.35rem; }
+.language-control { display: grid; gap: 5px; min-width: 190px; }
+.language-control label { font-size: 0.78rem; font-weight: 800; color: var(--muted); }
+.language-control select { min-height: 42px; padding: 8px 36px 8px 11px; color: var(--ink); background: #fff; border: 1px solid #9dacbf; border-radius: 9px; cursor: pointer; }
+.language-control small { color: var(--muted); font-size: 0.72rem; }
 .connection-state { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.88rem; font-weight: 700; }
 .connection-state .message { flex-basis: 100%; }
 .waiting-card { padding: 40px 24px; text-align: center; color: var(--muted); }
@@ -154,7 +158,12 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
 .transcript-list li { padding: 20px 24px; display: grid; grid-template-columns: 105px 1fr; gap: 18px; border-bottom: 1px solid #e6ebf2; }
 .transcript-list li:last-child { border-bottom: 0; }
 .transcript-list time { color: var(--muted); font-size: 0.78rem; font-weight: 700; }
-.transcript-list p { margin: 0; line-height: 1.65; font-size: 1.03rem; }
+.transcript-text > p { margin: 0; line-height: 1.65; font-size: 1.03rem; }
+.translation-line { margin-top: 12px; padding: 10px 12px; border-left: 3px solid #7aa4dd; border-radius: 0 8px 8px 0; background: #f2f6fc; }
+.translation-line p { margin: 4px 0 0; line-height: 1.6; }
+.translation-label { color: #34577f; font-size: 0.7rem; font-weight: 850; letter-spacing: 0.07em; text-transform: uppercase; }
+.translation-line .translation-loading { color: var(--muted); font-style: italic; }
+.translation-line .translation-error { color: #8b4b00; font-size: 0.86rem; }
 @media (max-width: 680px) {
   .site-header { padding-inline: 16px; }
   .brand > span:last-child { display: none; }
@@ -167,7 +176,8 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
   .control-row button, .join-row button { width: 100%; }
   .session-panel { align-items: flex-start; flex-wrap: wrap; }
   .session-panel > div { flex-basis: 100%; }
-  .joined-session { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .joined-session { align-items: stretch; flex-direction: column; gap: 14px; }
+  .language-control { width: 100%; }
   .transcript-list li { grid-template-columns: 1fr; gap: 7px; padding: 18px; }
   .panel-heading { padding-inline: 18px; }
 }

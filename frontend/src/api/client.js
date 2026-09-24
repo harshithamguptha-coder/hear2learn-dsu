@@ -41,6 +41,13 @@ export function saveTranscript(sessionId, text) {
   })
 }
 
+export function translateTranscript(sessionId, text, targetLanguage) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/translations`, {
+    method: 'POST',
+    body: JSON.stringify({ text, target_language: targetLanguage }),
+  })
+}
+
 export function sessionStreamUrl(sessionId) {
   return `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/events`
 }

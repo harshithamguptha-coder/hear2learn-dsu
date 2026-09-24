@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+LanguageCode = Literal["en", "kn", "hi"]
+
+
 class SessionResponse(BaseModel):
     session_id: str
     status: Literal["active", "ended"]
@@ -21,3 +24,16 @@ class TranscriptResponse(BaseModel):
     session_id: str
     text: str
     created_at: str
+
+
+class TranslationRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=5_000)
+    target_language: LanguageCode
+
+
+class TranslationResponse(BaseModel):
+    session_id: str
+    source_language: Literal["en"]
+    target_language: LanguageCode
+    original_text: str
+    translated_text: str

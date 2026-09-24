@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import router
 from .database import init_db
 from .services.realtime import EventHub
+from .services.translation_service import TranslationService
+from .translation_api import router as translation_router
 
 
 @asynccontextmanager
@@ -17,7 +19,9 @@ async def lifespan(app: FastAPI):
     """Prepare application-wide resources when the server starts."""
     init_db()
     app.state.event_hub = EventHub()
+    app.state.translation_service = TranslationService()
     yield
+    await app.state.translation_service.close()
 
 
 app = FastAPI(
@@ -39,3 +43,4 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.include_router(translation_router, prefix="/api")

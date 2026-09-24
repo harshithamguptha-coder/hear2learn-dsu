@@ -9,6 +9,7 @@ export default function StudentPage() {
   const [session, setSession] = useState(null)
   const [error, setError] = useState('')
   const [joining, setJoining] = useState(false)
+  const [translationLanguage, setTranslationLanguage] = useState('en')
   const { transcript, connectionState } = useSessionStream(session?.session_id)
 
   async function handleJoin(event) {
@@ -81,6 +82,20 @@ export default function StudentPage() {
             <p className="eyebrow">You are in</p>
             <h2 id="joined-title">Lecture {session.session_id}</h2>
           </div>
+          <div className="language-control">
+            <label htmlFor="translation-language">Translation language</label>
+            <select
+              id="translation-language"
+              value={translationLanguage}
+              onChange={(event) => setTranslationLanguage(event.target.value)}
+              aria-describedby="translation-help"
+            >
+              <option value="en">English (original)</option>
+              <option value="kn">Kannada</option>
+              <option value="hi">Hindi</option>
+            </select>
+            <small id="translation-help">The original English always stays visible.</small>
+          </div>
           <span className="connection-state" role="status">
             <span aria-hidden="true" /> {connectionLabel}
           </span>
@@ -94,6 +109,8 @@ export default function StudentPage() {
         <TranscriptView
           items={transcript}
           emptyText="The transcript will appear here as soon as the teacher starts speaking."
+          sessionId={session.session_id}
+          translationLanguage={translationLanguage}
         />
       ) : (
         <div className="waiting-card" aria-hidden="true">

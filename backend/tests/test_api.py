@@ -68,6 +68,52 @@ def test_blank_or_ended_transcript_is_rejected(client):
     assert ended.status_code == 400
 
 
+def test_translation_endpoint_uses_session_and_keeps_original(client, monkeypatch):
+    session_id = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Welcome to today's lecture."},
+    )
+
+    async def fake_translate(text, target_language):
+        return {
+            "kn": "ಇಂದಿನ ಉಪನ್ಯಾಸಕ್ಕೆ ಸುಸ್ವಾಗತ.",
+            "hi": "आज के व्याख्यान में आपका स्वागत है।",
+        }[target_language]
+
+    monkeypatch.setattr(client.app.state.translation_service, "translate", fake_translate)
+    response = client.post(
+        f"/api/sessions/{session_id}/translations",
+        json={"text": "Welcome to today's lecture.", "target_language": "kn"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": session_id,
+        "source_language": "en",
+        "target_language": "kn",
+        "original_text": "Welcome to today's lecture.",
+        "translated_text": "ಇಂದಿನ ಉಪನ್ಯಾಸಕ್ಕೆ ಸುಸ್ವಾಗತ.",
+    }
+    original = client.get(f"/api/sessions/{session_id}/transcript").json()
+    assert [item["text"] for item in original] == ["Welcome to today's lecture."]
+
+
+def test_translation_rejects_unknown_session_and_language(client):
+    unknown = client.post(
+        "/api/sessions/NOT-A-SESSION/translations",
+        json={"text": "Hello", "target_language": "hi"},
+    )
+    assert unknown.status_code == 404
+
+    session_id = client.post("/api/sessions").json()["session_id"]
+    unsupported = client.post(
+        f"/api/sessions/{session_id}/translations",
+        json={"text": "Hello", "target_language": "fr"},
+    )
+    assert unsupported.status_code == 422
+
+
 def test_event_hub_delivers_transcript_to_session_subscriber():
     async def check_delivery():
         hub = EventHub()

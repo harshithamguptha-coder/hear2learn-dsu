@@ -1,3 +1,5 @@
+import TranslationLine from './TranslationLine'
+
 function formatTime(value) {
   return new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
@@ -6,7 +8,13 @@ function formatTime(value) {
   }).format(new Date(value))
 }
 
-export default function TranscriptView({ items, interimText = '', emptyText }) {
+export default function TranscriptView({
+  items,
+  interimText = '',
+  emptyText,
+  sessionId = '',
+  translationLanguage = 'en',
+}) {
   return (
     <section className="transcript-panel" aria-labelledby="transcript-title">
       <div className="panel-heading">
@@ -30,7 +38,14 @@ export default function TranscriptView({ items, interimText = '', emptyText }) {
           {items.map((item) => (
             <li key={item.id}>
               <time dateTime={item.created_at}>{formatTime(item.created_at)}</time>
-              <p>{item.text}</p>
+              <div className="transcript-text">
+                <p lang="en">{item.text}</p>
+                <TranslationLine
+                  sessionId={sessionId}
+                  text={item.text}
+                  language={translationLanguage}
+                />
+              </div>
             </li>
           ))}
         </ol>

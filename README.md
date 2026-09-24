@@ -1,8 +1,9 @@
 # Accessible Classroom — MVP foundation
 
-A small classroom app with a teacher lecture flow, a student join flow, and a
-live transcript backed by SQLite. It intentionally contains no translation,
-notes, Q&A, speaker detection, or other advanced AI features yet.
+A small classroom app with a teacher lecture flow, a student join flow, a
+live transcript backed by SQLite, and optional Kannada/Hindi translation. It
+intentionally contains no notes, Q&A, speaker detection, or other advanced AI
+features yet.
 
 ## What works
 
@@ -12,6 +13,8 @@ notes, Q&A, speaker detection, or other advanced AI features yet.
 - The Web Speech API converts speech to text through the browser.
 - Finalized text is sent to FastAPI, saved in SQLite, and broadcast with SSE.
 - Students receive the saved transcript first and then live additions.
+- Students can request optional Kannada or Hindi translations per segment.
+- The original English remains visible if translation is unavailable.
 - Reconnecting students receive the SQLite-backed transcript again.
 - A session ID is a 64-bit random hexadecimal string. A database primary key
   prevents duplicates, and creation retries if a collision ever occurs.
@@ -21,11 +24,13 @@ notes, Q&A, speaker detection, or other advanced AI features yet.
 ```text
 backend/
   app/
-    api.py                  # HTTP and SSE routes
+    api.py                  # Lecture, transcript, and SSE routes
+    translation_api.py      # Session-scoped translation endpoint
     database.py             # SQLite connection and schema
     models.py               # Request/response schemas
     services/
       session_service.py   # Session and transcript storage
+      translation_service.py # Replaceable external translation provider
       realtime.py           # In-memory live event queues
   tests/                    # API and SSE tests
 frontend/
@@ -93,6 +98,15 @@ Only finalized words are persisted. Temporary/interim words are shown to the
 teacher but are not sent to the API. In-memory SSE queues notify open pages;
 SQLite is the durable source of truth and is restored into each new stream.
 
+## Translation notes
+
+The MVP uses MyMemory's no-key HTTP translation API through a replaceable
+`TranslationService`. Kannada and Hindi requests are made only when a student
+selects that language, so English remains the default and no provider calls are
+made for the Teacher page. The public translation provider requires an internet
+connection and has usage/rate limits. Translation is not stored in SQLite; the
+English transcript remains the durable source and can be translated again later.
+
 ## Data location
 
 The default database is `backend/classroom.db`. To use another path, set
@@ -110,3 +124,4 @@ local lecture and transcript data.
 | `GET` | `/api/sessions/{session_id}/transcript` | Read saved transcript |
 | `POST` | `/api/sessions/{session_id}/transcript` | Save finalized text |
 | `GET` | `/api/sessions/{session_id}/events` | Subscribe to live SSE events |
+| `POST` | `/api/sessions/{session_id}/translations` | Translate one English segment |
