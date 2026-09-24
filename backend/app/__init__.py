@@ -1,0 +1,1 @@
+"""Accessible Classroom backend package."""
