@@ -243,9 +243,9 @@ export default function StudentPage() {
             setQuestionInput={setQuestionInput}
           />
 
-          <details className="raw-transcript-details" open={!structuredData}>
+          <details className="raw-transcript-details" open={!structuredData || translationLanguage !== 'en'}>
             <summary className="raw-transcript-summary">
-              <span>Raw Live Transcript</span>
+              <span>Live Transcript, Translations & Signs</span>
               <span className="raw-transcript-badge">{transcript.length} items</span>
             </summary>
             <TranscriptView
