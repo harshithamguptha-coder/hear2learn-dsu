@@ -1,9 +1,10 @@
 # Accessible Classroom — MVP foundation
 
 A small classroom app with a teacher lecture flow, a student join flow, a
-live transcript backed by SQLite, optional Kannada/Hindi/Telugu translation, and
-fixed-phrase sign representation. It intentionally contains no notes, Q&A,
-speaker detection, or other advanced AI features yet.
+live transcript backed by SQLite, optional Kannada/Hindi/Telugu translation, fixed-
+phrase sign representation, and automatic session-scoped lecture notes. It
+intentionally contains no Q&A, speaker detection, or other advanced AI
+features yet.
 
 ## What works
 
@@ -15,6 +16,7 @@ speaker detection, or other advanced AI features yet.
 - Students receive the saved transcript first and then live additions.
 - Students can request optional Kannada, Hindi, or Telugu translations per segment.
 - Fixed classroom phrases can show local sign-representation placeholders.
+- Ending a lecture generates notes from only that session's transcript.
 - The original English remains visible if translation is unavailable.
 - Reconnecting students receive the SQLite-backed transcript again.
 - A session ID is a 64-bit random hexadecimal string. A database primary key
@@ -27,10 +29,12 @@ backend/
   app/
     api.py                  # Lecture, transcript, and SSE routes
     translation_api.py      # Session-scoped translation endpoint
+    notes_api.py            # Session-scoped lecture notes endpoint
     database.py             # SQLite connection and schema
     models.py               # Request/response schemas
     services/
       session_service.py   # Session and transcript storage
+      notes_service.py     # Deterministic extractive notes generation
       translation_service.py # Replaceable external translation provider
       realtime.py           # In-memory live event queues
   tests/                    # API and SSE tests
@@ -122,6 +126,17 @@ and optional translation. Unsupported or longer sentences are not represented.
 The current `session_id` scopes the Student rendering; no new session or API is
 created.
 
+## Automatic lecture notes
+
+The project has no existing LLM configuration, so the MVP uses a small
+standard-library extractive notes service rather than adding a model dependency.
+On the first End Lecture request, it reads transcripts using only the current
+`session_id` and stores one notes row for that session. Notes include a title,
+short summary, main topics, key points, and important terms. Transcripts below
+20 words return a clear "more speech needed" state. Students already connected
+receive a session-ended SSE event and load the notes without refreshing, while
+the full translated and signed transcript remains below the notes card.
+
 ## Data location
 
 The default database is `backend/classroom.db`. To use another path, set
@@ -140,3 +155,4 @@ local lecture and transcript data.
 | `POST` | `/api/sessions/{session_id}/transcript` | Save finalized text |
 | `GET` | `/api/sessions/{session_id}/events` | Subscribe to live SSE events |
 | `POST` | `/api/sessions/{session_id}/translations` | Translate one English segment |
+| `GET` | `/api/sessions/{session_id}/notes` | Get notes for one ended session |

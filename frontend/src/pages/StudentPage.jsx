@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import { getSession } from '../api/client'
+import { getLectureNotes, getSession } from '../api/client'
+import LectureNotes from '../components/LectureNotes'
 import TranscriptView from '../components/TranscriptView'
 import { useSessionStream } from '../hooks/useSessionStream'
 
@@ -10,7 +11,10 @@ export default function StudentPage() {
   const [error, setError] = useState('')
   const [joining, setJoining] = useState(false)
   const [translationLanguage, setTranslationLanguage] = useState('en')
-  const { transcript, connectionState } = useSessionStream(session?.session_id)
+  const [notes, setNotes] = useState(null)
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [notesError, setNotesError] = useState('')
+  const { transcript, connectionState, sessionEnded } = useSessionStream(session?.session_id)
 
   async function handleJoin(event) {
     event.preventDefault()
@@ -20,6 +24,8 @@ export default function StudentPage() {
     setJoining(true)
     setError('')
     setSession(null)
+    setNotes(null)
+    setNotesError('')
     try {
       setSession(await getSession(sessionId))
     } catch (requestError) {
@@ -32,6 +38,40 @@ export default function StudentPage() {
       setJoining(false)
     }
   }
+
+  useEffect(() => {
+    if (sessionEnded) {
+      setSession((current) => (
+        current ? { ...current, status: 'ended' } : current
+      ))
+    }
+  }, [sessionEnded])
+
+  useEffect(() => {
+    const sessionId = session?.session_id
+    const shouldLoad = session?.status === 'ended' || sessionEnded
+    if (!sessionId || !shouldLoad || notes) return undefined
+
+    let cancelled = false
+    setNotesLoading(true)
+    setNotesError('')
+    getLectureNotes(sessionId)
+      .then((generatedNotes) => {
+        if (!cancelled) setNotes(generatedNotes)
+      })
+      .catch((requestError) => {
+        if (!cancelled) {
+          setNotesError(`Lecture notes could not be loaded: ${requestError.message}`)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNotesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [notes, session?.session_id, session?.status, sessionEnded])
 
   const connectionLabel = {
     idle: 'Not connected',
@@ -107,12 +147,17 @@ export default function StudentPage() {
       )}
 
       {session ? (
-        <TranscriptView
-          items={transcript}
-          emptyText="The transcript will appear here as soon as the teacher starts speaking."
-          sessionId={session.session_id}
-          translationLanguage={translationLanguage}
-        />
+        <>
+          {(notes || notesLoading || notesError) && (
+            <LectureNotes notes={notes} loading={notesLoading} error={notesError} />
+          )}
+          <TranscriptView
+            items={transcript}
+            emptyText="The transcript will appear here as soon as the teacher starts speaking."
+            sessionId={session.session_id}
+            translationLanguage={translationLanguage}
+          />
+        </>
       ) : (
         <div className="waiting-card" aria-hidden="true">
           <span>Join a lecture to see its live transcript.</span>

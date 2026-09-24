@@ -122,6 +122,71 @@ def test_translation_rejects_unknown_session_and_language(client):
     assert unsupported.status_code == 422
 
 
+def test_end_session_generates_session_scoped_notes(client):
+    first_id = client.post("/api/sessions").json()["session_id"]
+    second_id = client.post("/api/sessions").json()["session_id"]
+    first_lines = [
+        "Good morning. Today we explore Python functions and parameters.",
+        "A function receives input values and returns a result to the caller.",
+        "Clear names and short examples make code easier to understand and test.",
+    ]
+    second_lines = [
+        "This session studies the water cycle in our geography lesson.",
+        "Evaporation moves water into the atmosphere before condensation begins.",
+        "Clouds form when water vapor cools and becomes tiny liquid droplets.",
+    ]
+    for text in first_lines:
+        assert client.post(
+            f"/api/sessions/{first_id}/transcript", json={"text": text}
+        ).status_code == 201
+    for text in second_lines:
+        assert client.post(
+            f"/api/sessions/{second_id}/transcript", json={"text": text}
+        ).status_code == 201
+
+    before_end = client.get(f"/api/sessions/{first_id}/notes")
+    assert before_end.status_code == 409
+
+    assert client.post(f"/api/sessions/{first_id}/end").status_code == 200
+    assert client.post(f"/api/sessions/{second_id}/end").status_code == 200
+
+    first_notes = client.get(f"/api/sessions/{first_id}/notes")
+    second_notes = client.get(f"/api/sessions/{second_id}/notes")
+    assert first_notes.status_code == 200
+    assert second_notes.status_code == 200
+    assert first_notes.json()["status"] == "ready"
+    assert second_notes.json()["status"] == "ready"
+    assert first_notes.json()["session_id"] == first_id
+    assert second_notes.json()["session_id"] == second_id
+    assert "Python" in first_notes.json()["summary"]
+    assert "water" in second_notes.json()["summary"].lower()
+    assert "Python" not in second_notes.json()["summary"]
+    assert "water" not in first_notes.json()["summary"].lower()
+    assert first_notes.json()["key_points"]
+    assert first_notes.json()["important_terms"]
+
+
+def test_too_short_transcript_returns_useful_notes(client):
+    session_id = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Good morning."},
+    )
+    client.post(f"/api/sessions/{session_id}/end")
+
+    response = client.get(f"/api/sessions/{session_id}/notes")
+    assert response.status_code == 200
+    assert response.json()["status"] == "too_short"
+    assert response.json()["message"]
+    assert response.json()["key_points"] == []
+    assert client.get(f"/api/sessions/{session_id}/transcript").json()[0]["text"] == "Good morning."
+
+
+def test_notes_reject_unknown_session(client):
+    response = client.get("/api/sessions/UNKNOWN/notes")
+    assert response.status_code == 404
+
+
 def test_event_hub_delivers_transcript_to_session_subscriber():
     async def check_delivery():
         hub = EventHub()

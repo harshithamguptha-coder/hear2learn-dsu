@@ -37,3 +37,15 @@ class TranslationResponse(BaseModel):
     target_language: LanguageCode
     original_text: str
     translated_text: str
+
+
+class LectureNotesResponse(BaseModel):
+    session_id: str
+    status: Literal["ready", "too_short"]
+    title: str
+    summary: str
+    main_topics: list[str]
+    key_points: list[str]
+    important_terms: list[str]
+    message: str | None = None
+    created_at: str

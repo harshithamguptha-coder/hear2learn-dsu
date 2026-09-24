@@ -20,6 +20,10 @@ def get_event_hub(request: Request) -> EventHub:
     return request.app.state.event_hub
 
 
+def get_notes_service(request: Request):
+    return request.app.state.notes_service
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -46,14 +50,27 @@ def get_session(
 
 
 @router.post("/sessions/{session_id}/end", response_model=SessionResponse)
-def end_session(
+async def end_session(
     session_id: str,
     db: sqlite3.Connection = Depends(get_db),
+    event_hub: EventHub = Depends(get_event_hub),
+    notes_service=Depends(get_notes_service),
 ) -> dict:
-    session = session_service.end_session(db, session_id)
-    if session is None:
+    current = session_service.find_session(db, session_id)
+    if current is None:
         raise HTTPException(status_code=404, detail="Lecture session not found.")
-    return session
+
+    if current["status"] == "active":
+        transcript = session_service.list_transcript(db, session_id)
+        notes_service.generate_and_save(db, session_id, transcript)
+        session = session_service.end_session(db, session_id)
+        await event_hub.publish(
+            session_id,
+            {"event": "session_ended", "session_id": session_id},
+        )
+        return session
+
+    return session_service.end_session(db, session_id)
 
 
 @router.get(
@@ -124,6 +141,10 @@ async def stream_session_events(
                     item = await asyncio.wait_for(queue.get(), timeout=15)
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
+                    continue
+
+                if item.get("event") == "session_ended":
+                    yield encode_event("session-ended", item)
                     continue
 
                 # A request between subscribing and the snapshot can otherwise

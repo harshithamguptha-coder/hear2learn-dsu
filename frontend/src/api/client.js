@@ -48,6 +48,10 @@ export function translateTranscript(sessionId, text, targetLanguage) {
   })
 }
 
+export function getLectureNotes(sessionId) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/notes`)
+}
+
 export function sessionStreamUrl(sessionId) {
   return `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/events`
 }

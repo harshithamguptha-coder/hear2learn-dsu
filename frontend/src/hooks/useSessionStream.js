@@ -13,16 +13,19 @@ function mergeTranscript(current, incoming) {
 export function useSessionStream(sessionId) {
   const [transcript, setTranscript] = useState([])
   const [connectionState, setConnectionState] = useState('idle')
+  const [endedSessionId, setEndedSessionId] = useState('')
 
   useEffect(() => {
     if (!sessionId) {
       setTranscript([])
+      setEndedSessionId('')
       setConnectionState('idle')
       return undefined
     }
 
     const source = new EventSource(sessionStreamUrl(sessionId))
     setTranscript([])
+    setEndedSessionId('')
     setConnectionState('connecting')
 
     const receiveSnapshot = (event) => {
@@ -35,8 +38,14 @@ export function useSessionStream(sessionId) {
       setTranscript((current) => mergeTranscript(current, [newItem]))
     }
 
+    const receiveSessionEnded = (event) => {
+      const message = JSON.parse(event.data)
+      if (message.session_id === sessionId) setEndedSessionId(sessionId)
+    }
+
     source.addEventListener('snapshot', receiveSnapshot)
     source.addEventListener('transcript', receiveTranscript)
+    source.addEventListener('session-ended', receiveSessionEnded)
     source.onopen = () => setConnectionState('connected')
     source.onerror = () => setConnectionState('reconnecting')
 
@@ -45,5 +54,9 @@ export function useSessionStream(sessionId) {
     }
   }, [sessionId])
 
-  return { transcript, connectionState }
+  return {
+    transcript,
+    connectionState,
+    sessionEnded: Boolean(sessionId && endedSessionId === sessionId),
+  }
 }
