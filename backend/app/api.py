@@ -9,8 +9,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .database import get_db
-from .models import SessionResponse, TranscriptCreate, TranscriptResponse
+from .models import (
+    LectureQARequest,
+    LectureQAResponse,
+    SessionResponse,
+    StructuredTranscriptResponse,
+    TranscriptCreate,
+    TranscriptResponse,
+    TranscriptStructureRequest,
+)
 from .services import session_service
+from .services.ai_structuring import AIStructuringError, ai_structuring_service
 from .services.realtime import EventHub
 
 router = APIRouter(tags=["lectures"])
@@ -94,6 +103,81 @@ async def save_transcript(
     return transcript
 
 
+@router.post(
+    "/sessions/{session_id}/structure",
+    response_model=StructuredTranscriptResponse,
+)
+async def structure_session_transcript(
+    session_id: str,
+    payload: TranscriptStructureRequest | None = None,
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Structure the finalized transcript of an active or ended lecture session."""
+    if session_service.find_session(db, session_id) is None:
+        raise HTTPException(status_code=404, detail="Lecture session not found.")
+
+    if payload is not None and payload.text is not None:
+        text = payload.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Transcript text cannot be empty.")
+    else:
+        saved_items = session_service.list_transcript(db, session_id)
+        text = " ".join(item["text"] for item in saved_items).strip()
+        if not text:
+            raise HTTPException(
+                status_code=400,
+                detail="No transcript available to structure for this session.",
+            )
+
+    try:
+        return await ai_structuring_service.structure_transcript(text)
+    except AIStructuringError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"AI structuring service unavailable: {exc}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/sessions/{session_id}/qa",
+    response_model=LectureQAResponse,
+)
+async def ask_session_question(
+    session_id: str,
+    payload: LectureQARequest,
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Ask a question grounded strictly in the current lecture session."""
+    if session_service.find_session(db, session_id) is None:
+        raise HTTPException(status_code=404, detail="Lecture session not found.")
+
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    # Retrieve ONLY information associated with this session (strict session isolation)
+    saved_items = session_service.list_transcript(db, session_id)
+    lecture_text = " ".join(item["text"] for item in saved_items).strip()
+
+    if not lecture_text:
+        raise HTTPException(
+            status_code=400,
+            detail="The lecture does not contain enough content to answer this yet.",
+        )
+
+    try:
+        return await ai_structuring_service.answer_question(question, lecture_text)
+    except AIStructuringError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"AI Q&A service unavailable: {exc}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 def encode_event(event_name: str, data: object) -> str:
     """Encode one named Server-Sent Event."""
     payload = json.dumps(data, ensure_ascii=False)
@@ -126,8 +210,6 @@ async def stream_session_events(
                     yield ": keep-alive\n\n"
                     continue
 
-                # A request between subscribing and the snapshot can otherwise
-                # appear in both responses. Transcript IDs make that harmless.
                 if item["id"] not in seen_ids:
                     seen_ids.add(item["id"])
                     yield encode_event("transcript", item)
