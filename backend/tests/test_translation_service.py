@@ -40,12 +40,15 @@ def test_translation_decodes_provider_html_and_caches_result():
             service = TranslationService(client)
             first = await service.translate("Hello", "kn")
             second = await service.translate("Hello", "kn")
+            telugu = await service.translate("Good morning", "te")
             await service.close()
 
         assert first == "Hello & welcome"
         assert second == "Hello & welcome"
-        assert len(calls) == 1
+        assert len(calls) == 2
         assert calls[0].url.params["langpair"] == "en|kn"
+        assert telugu == "Hello & welcome"
+        assert calls[1].url.params["langpair"] == "en|te"
 
     asyncio.run(check())
 

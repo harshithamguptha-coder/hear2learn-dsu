@@ -1,4 +1,4 @@
-"""Lightweight English-to-Kannada/Hindi translation service.
+"""Lightweight English-to-Kannada, Hindi, and Telugu translation service.
 
 MyMemory provides a simple no-key HTTP API, so this MVP does not need a large
 local model or another heavy dependency. The API remains replaceable because

@@ -1,3 +1,4 @@
+import SignRepresentation from './SignRepresentation'
 import TranslationLine from './TranslationLine'
 
 function formatTime(value) {
@@ -45,6 +46,7 @@ export default function TranscriptView({
                   text={item.text}
                   language={translationLanguage}
                 />
+                <SignRepresentation sessionId={sessionId} text={item.text} />
               </div>
             </li>
           ))}

@@ -1,9 +1,9 @@
 # Accessible Classroom — MVP foundation
 
 A small classroom app with a teacher lecture flow, a student join flow, a
-live transcript backed by SQLite, and optional Kannada/Hindi translation. It
-intentionally contains no notes, Q&A, speaker detection, or other advanced AI
-features yet.
+live transcript backed by SQLite, optional Kannada/Hindi/Telugu translation, and
+fixed-phrase sign representation. It intentionally contains no notes, Q&A,
+speaker detection, or other advanced AI features yet.
 
 ## What works
 
@@ -13,7 +13,8 @@ features yet.
 - The Web Speech API converts speech to text through the browser.
 - Finalized text is sent to FastAPI, saved in SQLite, and broadcast with SSE.
 - Students receive the saved transcript first and then live additions.
-- Students can request optional Kannada or Hindi translations per segment.
+- Students can request optional Kannada, Hindi, or Telugu translations per segment.
+- Fixed classroom phrases can show local sign-representation placeholders.
 - The original English remains visible if translation is unavailable.
 - Reconnecting students receive the SQLite-backed transcript again.
 - A session ID is a 64-bit random hexadecimal string. A database primary key
@@ -34,11 +35,13 @@ backend/
       realtime.py           # In-memory live event queues
   tests/                    # API and SSE tests
 frontend/
+  public/signs/         # Local MVP sign placeholder illustrations
   src/
-    api/client.js           # Small API client
-    components/             # Shared transcript view
-    hooks/                  # Speech recognition and SSE hooks
-    pages/                  # Teacher and student pages
+    api/                  # Small API client
+    components/           # Shared transcript, translation, and sign UI
+    services/             # Fixed sign-phrase registry
+    hooks/                # Speech recognition and SSE hooks
+    pages/                # Teacher and student pages
 ```
 
 ## Run the backend
@@ -83,6 +86,7 @@ From `C:\Users\Harshitha\OneDrive\Desktop\dsu\backend`:
 From `C:\Users\Harshitha\OneDrive\Desktop\dsu\frontend`:
 
 ```powershell
+npm test
 npm run build
 ```
 
@@ -101,11 +105,22 @@ SQLite is the durable source of truth and is restored into each new stream.
 ## Translation notes
 
 The MVP uses MyMemory's no-key HTTP translation API through a replaceable
-`TranslationService`. Kannada and Hindi requests are made only when a student
-selects that language, so English remains the default and no provider calls are
-made for the Teacher page. The public translation provider requires an internet
-connection and has usage/rate limits. Translation is not stored in SQLite; the
-English transcript remains the durable source and can be translated again later.
+`TranslationService`. Kannada, Hindi, and Telugu requests are made only when a
+student selects that language, so English remains the default and no provider
+calls are made for the Teacher page. The public translation provider requires
+an internet connection and has usage/rate limits. Translation is not stored in
+SQLite; the English transcript remains the durable source and can be translated
+again later.
+
+## Sign representation notes
+
+The Student transcript checks each finalized English segment against the fixed
+MVP registry in `frontend/src/services/signLanguage.js`. Only these phrases are
+supported: "Good morning", "Open your book", "Pay attention", "Any questions?",
+and "Thank you". A match shows one local placeholder SVG beneath the original
+and optional translation. Unsupported or longer sentences are not represented.
+The current `session_id` scopes the Student rendering; no new session or API is
+created.
 
 ## Data location
 

@@ -79,6 +79,7 @@ def test_translation_endpoint_uses_session_and_keeps_original(client, monkeypatc
         return {
             "kn": "ಇಂದಿನ ಉಪನ್ಯಾಸಕ್ಕೆ ಸುಸ್ವಾಗತ.",
             "hi": "आज के व्याख्यान में आपका स्वागत है।",
+            "te": "హాయ్ ఆండీ",
         }[target_language]
 
     monkeypatch.setattr(client.app.state.translation_service, "translate", fake_translate)
@@ -97,6 +98,13 @@ def test_translation_endpoint_uses_session_and_keeps_original(client, monkeypatc
     }
     original = client.get(f"/api/sessions/{session_id}/transcript").json()
     assert [item["text"] for item in original] == ["Welcome to today's lecture."]
+
+    telugu = client.post(
+        f"/api/sessions/{session_id}/translations",
+        json={"text": "Good morning", "target_language": "te"},
+    )
+    assert telugu.status_code == 200
+    assert telugu.json()["translated_text"] == "హాయ్ ఆండీ"
 
 
 def test_translation_rejects_unknown_session_and_language(client):

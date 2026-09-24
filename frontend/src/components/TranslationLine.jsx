@@ -6,6 +6,7 @@ const LANGUAGE_NAMES = {
   en: 'English',
   kn: 'Kannada',
   hi: 'Hindi',
+  te: 'Telugu',
 }
 
 // Each original transcript item owns its translation request. Switching the

@@ -139,7 +139,7 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
 .joined-session { display: flex; align-items: center; gap: 22px; margin: 0 0 22px; padding: 0 3px; }
 .joined-session > div:first-child { margin-right: auto; }
 .joined-session h2 { margin-bottom: 0; font-size: 1.35rem; }
-.language-control { display: grid; gap: 5px; min-width: 190px; }
+.language-control { display: grid; gap: 5px; min-width: 220px; }
 .language-control label { font-size: 0.78rem; font-weight: 800; color: var(--muted); }
 .language-control select { min-height: 42px; padding: 8px 36px 8px 11px; color: var(--ink); background: #fff; border: 1px solid #9dacbf; border-radius: 9px; cursor: pointer; }
 .language-control small { color: var(--muted); font-size: 0.72rem; }
@@ -164,6 +164,12 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
 .translation-label { color: #34577f; font-size: 0.7rem; font-weight: 850; letter-spacing: 0.07em; text-transform: uppercase; }
 .translation-line .translation-loading { color: var(--muted); font-style: italic; }
 .translation-line .translation-error { color: #8b4b00; font-size: 0.86rem; }
+.sign-representation { margin: 14px 0 0; padding: 12px; border: 1px solid #b9d8c6; border-radius: 10px; background: #f1faf5; }
+.sign-representation figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.sign-representation figcaption span { color: #35664d; font-size: 0.72rem; font-weight: 850; letter-spacing: 0.07em; text-transform: uppercase; }
+.sign-representation figcaption strong { font-size: 1rem; }
+.sign-representation img { display: block; width: 100%; max-width: 360px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: #fff; }
+.sign-representation small { display: block; margin-top: 7px; color: var(--muted); font-size: 0.72rem; }
 @media (max-width: 680px) {
   .site-header { padding-inline: 16px; }
   .brand > span:last-child { display: none; }
@@ -178,6 +184,7 @@ h1 { margin-bottom: 14px; font-size: clamp(2.1rem, 6vw, 4rem); line-height: 1.04
   .session-panel > div { flex-basis: 100%; }
   .joined-session { align-items: stretch; flex-direction: column; gap: 14px; }
   .language-control { width: 100%; }
+  .sign-representation figcaption { align-items: flex-start; flex-direction: column; gap: 4px; }
   .transcript-list li { grid-template-columns: 1fr; gap: 7px; padding: 18px; }
   .panel-heading { padding-inline: 18px; }
 }

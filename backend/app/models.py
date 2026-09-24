@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-LanguageCode = Literal["en", "kn", "hi"]
+LanguageCode = Literal["en", "kn", "hi", "te"]
 
 
 class SessionResponse(BaseModel):

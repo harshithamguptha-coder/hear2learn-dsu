@@ -93,6 +93,7 @@ export default function StudentPage() {
               <option value="en">English (original)</option>
               <option value="kn">Kannada</option>
               <option value="hi">Hindi</option>
+              <option value="te">Telugu</option>
             </select>
             <small id="translation-help">The original English always stays visible.</small>
           </div>

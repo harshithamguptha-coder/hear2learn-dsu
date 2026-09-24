@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Open your book sign placeholder</title>
+  <desc id="desc">A simple illustrated two-hand gesture representing Open your book.</desc>
+  <rect width="640" height="360" rx="24" fill="#e7f6ee"/>
+  <circle cx="320" cy="137" r="67" fill="#ffd9b8"/>
+  <path d="M265 191c-30 20-44 52-41 91h192c3-39-11-71-41-91-18 12-35 18-55 18s-37-6-55-18Z" fill="#6941a5"/>
+  <path d="M163 249c-5-13 12-24 20-13l35 49-22-65c-4-12 11-20 18-9l31 50-10-68c-2-13 15-17 19-4l19 75 12-67c3-13 20-10 19 4l-13 91c-6 42-24 69-56 81-23 9-51-4-61-28l-26-61c-6-15 13-28 25-17l24 23-34-45Z" fill="#f3b38f" stroke="#8a4f35" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M177 285c39-24 84-31 135-20l14 3-17 38-132 4Z" fill="#fff" stroke="#34577f" stroke-width="7"/>
+  <path d="M463 285c-39-24-84-31-135-20l-14 3 17 38 132 4Z" fill="#fff" stroke="#34577f" stroke-width="7"/>
+  <rect x="180" y="318" width="280" height="30" rx="15" fill="#fff"/>
+  <text x="320" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1d563d">Open your book</text>
+</svg>
