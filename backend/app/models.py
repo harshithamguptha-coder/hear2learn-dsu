@@ -78,6 +78,7 @@ class StructuredTranscriptResponse(BaseModel):
 
 class LectureQARequest(BaseModel):
     question: str = Field(min_length=1, max_length=1_000)
+    conversation_id: str | None = None
 
 
 class LectureQAResponse(BaseModel):
@@ -85,6 +86,24 @@ class LectureQAResponse(BaseModel):
     answer: str
     sources: list[str] = Field(default_factory=list)
     lecture_grounded: bool
+    conversation_id: str
+
+
+class ConversationMessageResponse(BaseModel):
+    id: int
+    conversation_id: str
+    role: Literal["user", "assistant"]
+    content: str
+    sources: list[str] = Field(default_factory=list)
+    lecture_grounded: bool
+    created_at: str
+
+
+class ConversationDetailResponse(BaseModel):
+    id: str
+    session_id: str
+    messages: list[ConversationMessageResponse] = Field(default_factory=list)
+    created_at: str
 
 
 class TranslationRequest(BaseModel):

@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { askLectureQuestion } from '../api/client'
 
+const QUICK_SUGGESTIONS = [
+  'Explain that simply',
+  'Give an example',
+  'What formula was mentioned?',
+  'What are the key points?',
+]
+
 export default function StructuredLectureView({
   structuredData,
   loading,
@@ -10,9 +17,15 @@ export default function StructuredLectureView({
   setQaResult: externalSetQaResult,
   questionInput: externalQuestionInput,
   setQuestionInput: externalSetQuestionInput,
+  conversationId: externalConversationId,
+  setConversationId: externalSetConversationId,
+  conversationMessages: externalConversationMessages,
+  setConversationMessages: externalSetConversationMessages,
 }) {
   const [internalQuestionInput, setInternalQuestionInput] = useState('')
   const [internalQaResult, setInternalQaResult] = useState(null)
+  const [internalConversationId, setInternalConversationId] = useState(null)
+  const [internalMessages, setInternalMessages] = useState([])
   const [qaLoading, setQaLoading] = useState(false)
   const [qaError, setQaError] = useState('')
 
@@ -20,23 +33,57 @@ export default function StructuredLectureView({
   const setQuestionInput = externalSetQuestionInput || setInternalQuestionInput
   const qaResult = externalQaResult !== undefined ? externalQaResult : internalQaResult
   const setQaResult = externalSetQaResult || setInternalQaResult
+  const conversationId = externalConversationId !== undefined ? externalConversationId : internalConversationId
+  const setConversationId = externalSetConversationId || setInternalConversationId
+  const messages = externalConversationMessages !== undefined ? externalConversationMessages : internalMessages
+  const setMessages = externalSetConversationMessages || setInternalMessages
 
-  async function handleAskQuestion(e) {
-    e.preventDefault()
-    const q = questionInput.trim()
-    if (!q || !sessionId) return
+  async function handleAskQuestion(e, explicitQuestion = null) {
+    if (e && e.preventDefault) e.preventDefault()
+    const q = (explicitQuestion || questionInput).trim()
+    if (!q || !sessionId || qaLoading) return
 
+    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const userMsg = {
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      role: 'user',
+      content: q,
+      timestamp: nowStr,
+    }
+
+    setMessages((prev) => [...prev, userMsg])
+    setQuestionInput('')
     setQaLoading(true)
     setQaError('')
+
     try {
-      const res = await askLectureQuestion(sessionId, q)
+      const res = await askLectureQuestion(sessionId, q, conversationId)
+      if (res.conversation_id && res.conversation_id !== conversationId) {
+        setConversationId(res.conversation_id)
+      }
+      const assistantMsg = {
+        id: `ast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role: 'assistant',
+        content: res.answer,
+        sources: res.sources || [],
+        lecture_grounded: Boolean(res.lecture_grounded),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }
+      setMessages((prev) => [...prev, assistantMsg])
       setQaResult(res)
     } catch (err) {
       setQaError(err.message || 'Unable to answer this question right now.')
-      setQaResult(null)
     } finally {
       setQaLoading(false)
     }
+  }
+
+  function handleResetConversation() {
+    setMessages([])
+    setConversationId(null)
+    setQaResult(null)
+    setQaError('')
+    setQuestionInput('')
   }
 
   const {
@@ -328,47 +375,98 @@ export default function StructuredLectureView({
         </article>
       )}
 
-      {/* Lecture-Grounded AI Q&A */}
+      {/* Lecture-Grounded AI Assistant (Multi-turn) */}
       <article className="structured-section qa-section" aria-labelledby="qa-title">
         <div className="qa-section-header">
           <div>
-            <h3 id="qa-title">Ask About This Lecture</h3>
+            <div className="qa-title-row">
+              <h3 id="qa-title">Lecture Assistant</h3>
+              {messages.length > 0 && (
+                <span className="qa-turn-counter">
+                  {messages.filter((m) => m.role === 'user').length} question{messages.filter((m) => m.role === 'user').length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
             <p className="qa-section-desc">
-              Answers are grounded strictly in the current lecture session.
+              Ask questions and follow-ups. Grounded strictly in this lecture session.
             </p>
           </div>
-          <span className="badge grounded-badge" title="Grounded in current session only">
-            Lecture-Grounded
-          </span>
+          <div className="qa-header-actions">
+            <span className="badge grounded-badge" title="Grounded in current session only">
+              Lecture-Grounded
+            </span>
+            {messages.length > 0 && (
+              <button
+                type="button"
+                className="secondary-button new-conversation-btn"
+                onClick={handleResetConversation}
+                title="Start a fresh conversation thread for this lecture"
+              >
+                + New Chat
+              </button>
+            )}
+          </div>
         </div>
 
-        <form className="qa-form" onSubmit={handleAskQuestion}>
-          <div className="qa-input-row">
-            <input
-              type="text"
-              className="qa-input"
-              value={questionInput}
-              onChange={(e) => setQuestionInput(e.target.value)}
-              placeholder="For example: What is classification? or What formula was mentioned?"
-              disabled={qaLoading || !sessionId}
-              aria-label="Ask a question about this lecture"
-            />
-            <button
-              type="submit"
-              className="primary-button qa-button"
-              disabled={qaLoading || !questionInput.trim() || !sessionId}
-            >
-              {qaLoading ? 'Thinking…' : 'Ask'}
-            </button>
-          </div>
-        </form>
+        {/* Multi-turn Chat Thread */}
+        <div className="qa-chat-thread" role="log" aria-live="polite">
+          {messages.length === 0 ? (
+            <div className="qa-empty-thread">
+              <span className="qa-empty-icon" aria-hidden="true">💬</span>
+              <p>Ask anything about this lecture! Follow-ups like <em>"Explain that simply"</em> or <em>"Give an example"</em> are understood in context.</p>
+            </div>
+          ) : (
+            messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`qa-chat-bubble ${msg.role === 'user' ? 'user-bubble' : 'assistant-bubble'}`}
+              >
+                <div className="bubble-header">
+                  <span className="bubble-author">
+                    {msg.role === 'user' ? '👤 You' : '🤖 Lecture Assistant'}
+                  </span>
+                  {msg.role === 'assistant' && (
+                    msg.lecture_grounded ? (
+                      <span className="qa-grounded-pill verified">✓ In Lecture</span>
+                    ) : (
+                      <span className="qa-grounded-pill unverified">Not In Lecture</span>
+                    )
+                  )}
+                  {msg.timestamp && (
+                    <span className="bubble-time">{msg.timestamp}</span>
+                  )}
+                </div>
 
-        {qaLoading && (
-          <div className="qa-loading-state" role="status">
-            <span className="spinner-dot" aria-hidden="true" />
-            <span>Thinking about this lecture…</span>
-          </div>
-        )}
+                <div className="bubble-content">
+                  <p className="bubble-text">{msg.content}</p>
+                </div>
+
+                {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+                  <div className="qa-sources-block">
+                    <span className="qa-sources-title">Based on lecture:</span>
+                    <ul className="qa-sources-list">
+                      {msg.sources.map((src, sIdx) => (
+                        <li key={sIdx} className="qa-source-item">
+                          <blockquote className="qa-source-quote">"{src}"</blockquote>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+
+          {qaLoading && (
+            <div className="qa-chat-bubble assistant-bubble loading" role="status">
+              <div className="bubble-header">
+                <span className="bubble-author">🤖 Lecture Assistant</span>
+                <span className="spinner-dot" aria-hidden="true" />
+              </div>
+              <p className="bubble-text">Thinking about this lecture…</p>
+            </div>
+          )}
+        </div>
 
         {qaError && (
           <div className="qa-error-box" role="alert">
@@ -376,39 +474,44 @@ export default function StructuredLectureView({
           </div>
         )}
 
-        {qaResult && !qaLoading && (
-          <div className="qa-response-card" role="region" aria-label="Question Answer">
-            <div className="qa-response-header">
-              <span className="qa-question-label">Question:</span>
-              <strong className="qa-question-text">{qaResult.question}</strong>
-            </div>
-
-            <div className="qa-answer-block">
-              <div className="qa-answer-header">
-                <span className="qa-bot-badge">AI Answer</span>
-                {qaResult.lecture_grounded ? (
-                  <span className="qa-grounded-pill verified">✓ In Lecture</span>
-                ) : (
-                  <span className="qa-grounded-pill unverified">Not In Lecture</span>
-                )}
-              </div>
-              <p className="qa-answer-text">{qaResult.answer}</p>
-            </div>
-
-            {qaResult.sources && qaResult.sources.length > 0 && (
-              <div className="qa-sources-block">
-                <span className="qa-sources-title">Based on lecture:</span>
-                <ul className="qa-sources-list">
-                  {qaResult.sources.map((src, idx) => (
-                    <li key={idx} className="qa-source-item">
-                      <blockquote className="qa-source-quote">"{src}"</blockquote>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        {/* Quick Follow-Up Chips */}
+        <div className="qa-suggestions-row" aria-label="Suggested follow-up questions">
+          <span className="suggestions-label">Suggestions:</span>
+          <div className="suggestions-pills">
+            {QUICK_SUGGESTIONS.map((sug, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="suggestion-pill-btn"
+                disabled={qaLoading || !sessionId}
+                onClick={() => handleAskQuestion(null, sug)}
+              >
+                {sug}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
+
+        <form className="qa-form" onSubmit={(e) => handleAskQuestion(e)}>
+          <div className="qa-input-row">
+            <input
+              type="text"
+              className="qa-input"
+              value={questionInput}
+              onChange={(e) => setQuestionInput(e.target.value)}
+              placeholder="Ask a question or follow-up (e.g. 'Explain that simply' or 'Give an example')…"
+              disabled={qaLoading || !sessionId}
+              aria-label="Ask a question or follow-up about this lecture"
+            />
+            <button
+              type="submit"
+              className="primary-button qa-button"
+              disabled={qaLoading || !questionInput.trim() || !sessionId}
+            >
+              {qaLoading ? 'Thinking…' : 'Send'}
+            </button>
+          </div>
+        </form>
       </article>
     </section>
   )

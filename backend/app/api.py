@@ -10,6 +10,8 @@ from fastapi.responses import StreamingResponse
 
 from .database import get_db
 from .models import (
+    ConversationDetailResponse,
+    ConversationMessageResponse,
     LectureQARequest,
     LectureQAResponse,
     SessionResponse,
@@ -166,13 +168,31 @@ async def ask_session_question(
     payload: LectureQARequest,
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    """Ask a question grounded strictly in the current lecture session."""
+    """Answer a student's question grounded strictly in the current lecture session."""
     if session_service.find_session(db, session_id) is None:
         raise HTTPException(status_code=404, detail="Lecture session not found.")
 
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    # Validate or create conversation scoped to this session
+    conv_id = payload.conversation_id
+    if conv_id:
+        conversation = session_service.find_conversation(db, conv_id)
+        if conversation is None:
+            conversation = session_service.create_conversation(db, session_id, conversation_id=conv_id)
+        elif conversation["session_id"] != session_id:
+            # Strict session isolation: conversation from another session cannot be accessed
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation not found for this lecture session.",
+            )
+    else:
+        conversation = session_service.create_conversation(db, session_id)
+
+    # Retrieve existing messages for multi-turn history (up to recent limit)
+    history = session_service.list_conversation_messages(db, conversation["id"], limit=20)
 
     # Retrieve ONLY information associated with this session (strict session isolation)
     saved_items = session_service.list_transcript(db, session_id)
@@ -185,7 +205,11 @@ async def ask_session_question(
         )
 
     try:
-        return await ai_structuring_service.answer_question(question, lecture_text)
+        qa_result = await ai_structuring_service.answer_question(
+            question=question,
+            lecture_text=lecture_text,
+            conversation_history=history,
+        )
     except AIStructuringError as exc:
         raise HTTPException(
             status_code=503,
@@ -193,6 +217,79 @@ async def ask_session_question(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    # Record user message in conversation
+    session_service.add_conversation_message(
+        db,
+        conversation_id=conversation["id"],
+        role="user",
+        content=question,
+        sources=[],
+        lecture_grounded=True,
+    )
+
+    # Record assistant message in conversation
+    session_service.add_conversation_message(
+        db,
+        conversation_id=conversation["id"],
+        role="assistant",
+        content=qa_result.get("answer", ""),
+        sources=qa_result.get("sources", []),
+        lecture_grounded=qa_result.get("lecture_grounded", False),
+    )
+
+    qa_result["conversation_id"] = conversation["id"]
+    return qa_result
+
+
+@router.post(
+    "/sessions/{session_id}/conversations",
+    response_model=ConversationDetailResponse,
+    status_code=201,
+)
+def create_session_conversation(
+    session_id: str,
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Create a new conversation session-scoped to the current lecture."""
+    if session_service.find_session(db, session_id) is None:
+        raise HTTPException(status_code=404, detail="Lecture session not found.")
+    conversation = session_service.create_conversation(db, session_id)
+    return {
+        "id": conversation["id"],
+        "session_id": session_id,
+        "messages": [],
+        "created_at": conversation["created_at"],
+    }
+
+
+@router.get(
+    "/sessions/{session_id}/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+)
+def get_session_conversation(
+    session_id: str,
+    conversation_id: str,
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Retrieve full conversation messages for a session-scoped conversation."""
+    if session_service.find_session(db, session_id) is None:
+        raise HTTPException(status_code=404, detail="Lecture session not found.")
+
+    conversation = session_service.find_conversation(db, conversation_id)
+    if conversation is None or conversation["session_id"] != session_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found for this lecture session.",
+        )
+
+    messages = session_service.list_conversation_messages(db, conversation_id, limit=50)
+    return {
+        "id": conversation["id"],
+        "session_id": session_id,
+        "messages": messages,
+        "created_at": conversation["created_at"],
+    }
 
 
 def encode_event(event_name: str, data: object) -> str:

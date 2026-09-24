@@ -63,10 +63,21 @@ export function structureTranscript(sessionId, text) {
   })
 }
 
-export function askLectureQuestion(sessionId, question) {
+export function askLectureQuestion(sessionId, question, conversationId = null) {
+  const payload = { question }
+  if (conversationId) {
+    payload.conversation_id = conversationId
+  }
   return request(`/sessions/${encodeURIComponent(sessionId)}/qa`, {
     method: 'POST',
-    body: JSON.stringify({ question }),
+    body: JSON.stringify(payload),
   })
 }
+
+export function getSessionConversation(sessionId, conversationId) {
+  return request(
+    `/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}`
+  )
+}
+
 

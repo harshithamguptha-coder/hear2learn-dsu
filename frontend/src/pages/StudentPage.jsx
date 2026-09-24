@@ -23,6 +23,10 @@ export default function StudentPage() {
     setStudentQaResult: setQaResult,
     studentQuestionInput: questionInput,
     setStudentQuestionInput: setQuestionInput,
+    studentConversationId: conversationId,
+    setStudentConversationId: setConversationId,
+    studentConversationMessages: conversationMessages,
+    setStudentConversationMessages: setConversationMessages,
     studentLastStructuredText,
     setStudentLastStructuredText,
     teacherSession,
@@ -248,6 +252,10 @@ export default function StudentPage() {
             setQaResult={setQaResult}
             questionInput={questionInput}
             setQuestionInput={setQuestionInput}
+            conversationId={conversationId}
+            setConversationId={setConversationId}
+            conversationMessages={conversationMessages}
+            setConversationMessages={setConversationMessages}
           />
         </div>
       ) : (

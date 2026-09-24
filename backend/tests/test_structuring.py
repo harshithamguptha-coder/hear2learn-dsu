@@ -21,7 +21,7 @@ class MockFailingProvider(AIProvider):
     async def structure_transcript(self, text: str):
         raise AIStructuringError("Upstream model service timeout.")
 
-    async def answer_question(self, question: str, lecture_text: str):
+    async def answer_question(self, question: str, lecture_text: str, *args, **kwargs):
         raise AIStructuringError("Upstream Q&A model service timeout.")
 
 
@@ -75,7 +75,7 @@ class MockSuccessProvider(AIProvider):
             ],
         }
 
-    async def answer_question(self, question: str, lecture_text: str):
+    async def answer_question(self, question: str, lecture_text: str, *args, **kwargs):
         if "france" in question.lower():
             return {
                 "question": question,
@@ -645,4 +645,308 @@ def test_step6_heuristic_fallback_offline():
     assert any("primary key" in d["term"].lower() for d in result["definitions"])
     assert len(result["examples"]) >= 1
     assert len(result["important_moments"]) >= 3
+
+
+# ==============================================================================
+# PERSON 1 - STEP 7: ADVANCED LECTURE ASSISTANT TESTS
+# ==============================================================================
+
+# 27. Q&A without conversation_id creates conversation and returns conversation_id
+def test_step7_qa_without_conversation_id_creates_conversation(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Supervised learning uses labelled training data for prediction."},
+    )
+
+    res = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What is supervised learning?"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "conversation_id" in data
+    assert data["conversation_id"].startswith("conv_")
+    assert data["lecture_grounded"] is True
+
+
+# 28. Q&A with existing conversation_id continues conversation and returns same conversation_id
+def test_step7_qa_with_existing_conversation_id_continues_conversation(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Supervised learning uses labelled training data. For example, spam filtering is a classification task."},
+    )
+
+    # First turn
+    res1 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What is supervised learning?"},
+    )
+    assert res1.status_code == 200
+    conv_id = res1.json()["conversation_id"]
+
+    # Second turn with conversation_id
+    res2 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "Give an example.", "conversation_id": conv_id},
+    )
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["conversation_id"] == conv_id
+    assert data2["lecture_grounded"] is True
+    assert "spam" in data2["answer"].lower()
+
+
+# 29. Follow-up receives previous context ("Explain that simply")
+def test_step7_follow_up_simplification_receives_previous_context(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Classification predicts discrete categories based on labelled features."},
+    )
+
+    res1 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What is classification?"},
+    )
+    conv_id = res1.json()["conversation_id"]
+
+    res2 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "Explain that simply.", "conversation_id": conv_id},
+    )
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["lecture_grounded"] is True
+    assert "predict" in data2["answer"].lower() or "categories" in data2["answer"].lower()
+
+
+# 30. Follow-up for formulas ("What is the formula?")
+def test_step7_follow_up_formula_receives_previous_context(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Force is related to acceleration. F = ma is the equation of motion."},
+    )
+
+    res1 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What did the teacher say about force?"},
+    )
+    conv_id = res1.json()["conversation_id"]
+
+    res2 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What is the formula?", "conversation_id": conv_id},
+    )
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["lecture_grounded"] is True
+    assert "F = ma" in data2["answer"]
+
+
+# 31. Follow-up ordinal reference ("Explain the second one")
+def test_step7_follow_up_ordinal_receives_previous_context(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "We covered two topics: Regression and Classification. Classification predicts discrete categories."},
+    )
+
+    res1 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What topics did we cover?"},
+    )
+    conv_id = res1.json()["conversation_id"]
+
+    res2 = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "Explain the second one.", "conversation_id": conv_id},
+    )
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["lecture_grounded"] is True
+    assert "classification" in data2["answer"].lower() or "discrete" in data2["answer"].lower()
+
+
+# 32. Conversation belongs to correct session and can be retrieved
+def test_step7_conversation_belongs_to_correct_session(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Supervised learning uses labelled training data."},
+    )
+
+    res = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What is supervised learning?"},
+    )
+    conv_id = res.json()["conversation_id"]
+
+    # Retrieve conversation detail
+    detail = client.get(f"/api/sessions/{session_id}/conversations/{conv_id}")
+    assert detail.status_code == 200
+    data = detail.json()
+    assert data["id"] == conv_id
+    assert data["session_id"] == session_id
+    assert len(data["messages"]) == 2
+    assert data["messages"][0]["role"] == "user"
+    assert data["messages"][0]["content"] == "What is supervised learning?"
+    assert data["messages"][1]["role"] == "assistant"
+    assert data["messages"][1]["lecture_grounded"] is True
+
+
+# 33. Strict Session Isolation: Cross-session conversation access rejected with 404
+def test_step7_cross_session_conversation_access_rejected_404(client):
+    # Session A
+    session_a = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{session_a}/transcript",
+        json={"text": "Session A lecture on neural networks."},
+    )
+    res_a = client.post(
+        f"/api/sessions/{session_a}/qa",
+        json={"question": "What is this lecture on?"},
+    )
+    conv_a = res_a.json()["conversation_id"]
+
+    # Session B
+    session_b = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{session_b}/transcript",
+        json={"text": "Session B lecture on relational databases."},
+    )
+
+    # Attempt to continue Session A's conversation from Session B
+    res_tamper = client.post(
+        f"/api/sessions/{session_b}/qa",
+        json={"question": "Tell me more.", "conversation_id": conv_a},
+    )
+    assert res_tamper.status_code == 404
+    assert "not found for this lecture session" in res_tamper.json()["detail"].lower()
+
+    # Attempt to read Session A's conversation from Session B
+    res_read = client.get(f"/api/sessions/{session_b}/conversations/{conv_a}")
+    assert res_read.status_code == 404
+
+
+# 34. Strict Session Isolation: Transcript from Session A cannot appear in Session B answers
+def test_step7_session_isolation_transcript_leakage_prevented(client):
+    session_a = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{session_a}/transcript",
+        json={"text": "Supervised learning uses labelled training data."},
+    )
+
+    session_b = client.post("/api/sessions").json()["session_id"]
+    client.post(
+        f"/api/sessions/{session_b}/transcript",
+        json={"text": "Relational databases use SQL and foreign keys."},
+    )
+
+    # Question about ML asked in Session B must be rejected as ungrounded
+    res_b = client.post(
+        f"/api/sessions/{session_b}/qa",
+        json={"question": "What does supervised learning use?"},
+    )
+    assert res_b.status_code == 200
+    data_b = res_b.json()
+    assert data_b["lecture_grounded"] is False
+    assert "not covered" in data_b["answer"].lower()
+    assert len(data_b["sources"]) == 0
+
+
+# 35. Unsupported or outside-of-lecture questions return lecture_grounded=False, sources=[]
+def test_step7_unsupported_or_outside_questions_not_grounded(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Today we discuss Newtonian mechanics and gravity."},
+    )
+
+    res = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What is the capital of France?"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["lecture_grounded"] is False
+    assert data["sources"] == []
+    assert "not covered" in data["answer"].lower()
+
+
+# 36. Explicit outside request rejected
+def test_step7_explicit_outside_request_rejected(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+    client.post(
+        f"/api/sessions/{session_id}/transcript",
+        json={"text": "Today we discuss Newtonian mechanics and gravity."},
+    )
+
+    res = client.post(
+        f"/api/sessions/{session_id}/qa",
+        json={"question": "What did the teacher say that was outside the lecture?"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["lecture_grounded"] is False
+    assert data["sources"] == []
+
+
+# 37. Creating an empty conversation explicitly via POST /sessions/{id}/conversations
+def test_step7_create_conversation_endpoint(client):
+    session = client.post("/api/sessions").json()
+    session_id = session["session_id"]
+
+    res = client.post(f"/api/sessions/{session_id}/conversations")
+    assert res.status_code == 201
+    data = res.json()
+    assert "id" in data
+    assert data["session_id"] == session_id
+    assert data["messages"] == []
+
+
+# 38. Heuristic provider offline multi-turn verification
+def test_step7_heuristic_multiturn_offline():
+    provider = HeuristicAIProvider()
+    lecture = "Supervised learning uses labelled training data. For example, spam detection is a classification problem. F = ma is the force formula."
+
+    # Turn 1
+    t1 = asyncio.run(provider.answer_question(
+        question="What is supervised learning?",
+        lecture_text=lecture,
+    ))
+    assert t1["lecture_grounded"] is True
+
+    history = [
+        {"role": "user", "content": "What is supervised learning?"},
+        {"role": "assistant", "content": t1["answer"]},
+    ]
+
+    # Turn 2: simplification
+    t2 = asyncio.run(provider.answer_question(
+        question="Explain that simply.",
+        lecture_text=lecture,
+        conversation_history=history,
+    ))
+    assert t2["lecture_grounded"] is True
+    assert "training data" in t2["answer"].lower()
+
+    # Turn 3: example
+    t3 = asyncio.run(provider.answer_question(
+        question="Give an example.",
+        lecture_text=lecture,
+        conversation_history=history,
+    ))
+    assert t3["lecture_grounded"] is True
+    assert "spam" in t3["answer"].lower()
 

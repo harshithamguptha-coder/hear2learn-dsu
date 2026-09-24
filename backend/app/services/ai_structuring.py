@@ -132,17 +132,18 @@ You must respond with ONLY a valid JSON object matching this schema:
 }
 """
 
-QA_SYSTEM_PROMPT = """You are an educational assistant answering student questions about a specific lecture.
+QA_SYSTEM_PROMPT = """You are an educational assistant answering student questions about a specific lecture in a multi-turn conversation.
 
 CRITICAL RULES:
 1. Use ONLY the supplied lecture content as the source of truth.
-2. Do NOT use outside knowledge or introduce external facts.
+2. Maintain strict grounding in the CURRENT lecture session. Do NOT use outside/general knowledge or introduce external facts.
 3. If the answer cannot be found or reasonably derived from the lecture content, you must explicitly state: "This was not covered in the current lecture."
 4. Do NOT invent or hallucinate facts, definitions, formulas, examples, numbers, or concepts not supported by the lecture.
-5. Provide a concise, student-friendly answer directly addressing the question.
+5. In multi-turn conversation, understand that follow-up questions (using pronouns such as "that", "this", "it", "the formula", "the second one", etc., or requests like "explain simply", "give an example") refer to the prior conversation history and previously discussed lecture topics.
 6. If the student asks to explain something simply, simplify the concept using ONLY the facts provided in the lecture.
-7. Include the exact relevant sentence or snippet from the lecture in the "sources" list.
-8. If the question was not covered, return "lecture_grounded": false and "sources": []. If answered from the lecture, return "lecture_grounded": true.
+7. If the student asks for an example, use ONLY examples mentioned in the lecture. If none was mentioned, explicitly state that an example was not given in the lecture.
+8. Include the exact relevant sentence or snippet from the lecture in the "sources" list.
+9. If the question was not covered, return "lecture_grounded": false and "sources": []. If answered from the lecture, return "lecture_grounded": true.
 
 You must respond with ONLY a valid JSON object matching this schema:
 {
@@ -168,7 +169,13 @@ class AIProvider(ABC):
         """Structure raw transcript text into clean_text, topic, key_points, concepts, technical_terms, numbers, formulas, and speaker_segments."""
 
     @abstractmethod
-    async def answer_question(self, question: str, lecture_text: str) -> dict[str, Any]:
+    async def answer_question(
+        self,
+        question: str,
+        lecture_text: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+        lecture_structured_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Answer a student's question grounded strictly in the provided lecture content."""
 
 
@@ -299,7 +306,30 @@ class HeuristicAIProvider(AIProvider):
             "important_moments": important_moments,
         }
 
-    async def answer_question(self, question: str, lecture_text: str) -> dict[str, Any]:
+    def _extract_subject_from_history(self, history: list[dict[str, Any]]) -> str | None:
+        if not history:
+            return None
+        for msg in reversed(history):
+            content = msg.get("content", "")
+            content_lower = content.lower()
+            for kw in self.COMMON_TECHNICAL_KEYWORDS:
+                if re.search(r"\b" + re.escape(kw) + r"\b", content_lower):
+                    return kw
+            m = re.search(r"\b(?:what is|what are|explain|about|define)\s+([a-zA-Z0-9\s\-]+?)(?=[?.!]|$)", content, re.IGNORECASE)
+            if m:
+                cand = m.group(1).strip()
+                cand_words = [w for w in cand.split() if w.lower() not in {"the", "a", "an", "that", "it", "this", "simply", "to"}]
+                if cand_words:
+                    return " ".join(cand_words)
+        return None
+
+    async def answer_question(
+        self,
+        question: str,
+        lecture_text: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+        lecture_structured_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         q_clean = question.strip()
         if not q_clean:
             raise ValueError("Question cannot be empty.")
@@ -315,6 +345,15 @@ class HeuristicAIProvider(AIProvider):
 
         q_lower = q_clean.lower()
 
+        # Reject explicitly unmentioned / outside requests
+        if any(p in q_lower for p in ["didn't mention", "did not mention", "outside the lecture", "outside of the lecture", "not in the lecture", "not covered in class"]):
+            return {
+                "question": q_clean,
+                "answer": "The current lecture does not provide enough information for that.",
+                "sources": [],
+                "lecture_grounded": False,
+            }
+
         # Split lecture into sentences
         sentences = [
             s.strip()
@@ -322,7 +361,51 @@ class HeuristicAIProvider(AIProvider):
             if s.strip()
         ]
 
-        # 1. Formula questions
+        recent_history = conversation_history[-10:] if conversation_history else []
+        previous_subject = self._extract_subject_from_history(recent_history)
+        last_assistant_msg = next((m.get("content", "") for m in reversed(recent_history) if m.get("role") == "assistant"), "")
+
+        is_simplify = any(w in q_lower for w in ["simply", "simple terms", "simplify", "easier", "in simple terms"])
+        is_example = any(w in q_lower for w in ["example", "instance", "sample"])
+
+        # 1. Ordinal reference follow-up (e.g. "Explain the second one" or "What was the first topic?")
+        ordinal_map = {
+            "first": 0, "second": 1, "third": 2, "fourth": 3,
+            "1st": 0, "2nd": 1, "3rd": 2, "4th": 3,
+        }
+        for ord_word, ord_idx in ordinal_map.items():
+            if re.search(r"\b" + ord_word + r"\b", q_lower):
+                items = []
+                if last_assistant_msg:
+                    m_list = re.findall(r"\b(?:[A-Z][a-zA-Z0-9_\-\s]{2,25})(?:,|\band\b|$)", last_assistant_msg)
+                    if len(m_list) > ord_idx:
+                        items = [re.sub(r"^(?:and|,)\s*", "", it).strip() for it in m_list if it.strip()]
+                if not items:
+                    for s in sentences:
+                        if any(t in s.lower() for t in ["two topics", "three topics", "topics:", "covered:", "includes:"]):
+                            parts = re.split(r"[:,]\s*|\band\b", s)
+                            items = [p.strip() for p in parts[1:] if p.strip()]
+                            break
+
+                if items and len(items) > ord_idx:
+                    target_concept = items[ord_idx]
+                    for s in sentences:
+                        if target_concept.lower() in s.lower() and len(s) > len(target_concept) + 5:
+                            clean_s = re.sub(r"^(?:teacher|student|unknown):\s*", "", s, flags=re.IGNORECASE).strip()
+                            return {
+                                "question": q_clean,
+                                "answer": clean_s,
+                                "sources": [clean_s],
+                                "lecture_grounded": True,
+                            }
+                    return {
+                        "question": q_clean,
+                        "answer": f"The lecture covered {target_concept}.",
+                        "sources": [s for s in sentences if target_concept.lower() in s.lower()][:1],
+                        "lecture_grounded": True,
+                    }
+
+        # 2. Formula questions (e.g. "What is the formula?" or "What formula was mentioned?")
         is_formula_query = any(w in q_lower for w in ["formula", "equation", "law", "f = ma", "v = ir", "e = mc", "pythagor", "area", "speed"])
         if is_formula_query:
             detected_formulas = self._extract_formulas(lec_clean)
@@ -338,8 +421,43 @@ class HeuristicAIProvider(AIProvider):
                     "sources": [matching_sentence],
                     "lecture_grounded": True,
                 }
+            elif previous_subject:
+                return {
+                    "question": q_clean,
+                    "answer": "This was not covered in the current lecture.",
+                    "sources": [],
+                    "lecture_grounded": False,
+                }
 
-        # 2. Number / measurement questions
+        # 3. Example follow-up (e.g. "Give an example" or "Give me an example")
+        if is_example:
+            ex_sentences = [
+                s for s in sentences
+                if any(p in s.lower() for p in ["for example", "for instance", "such as", "an example of"])
+            ]
+            if ex_sentences:
+                best_ex = None
+                if previous_subject:
+                    best_ex = next((s for s in ex_sentences if previous_subject.lower() in s.lower()), None)
+                if not best_ex:
+                    best_ex = ex_sentences[0]
+
+                clean_ex = re.sub(r"^(?:teacher|student|unknown):\s*", "", best_ex, flags=re.IGNORECASE).strip()
+                return {
+                    "question": q_clean,
+                    "answer": clean_ex,
+                    "sources": [clean_ex],
+                    "lecture_grounded": True,
+                }
+            elif previous_subject or "example" in q_lower:
+                return {
+                    "question": q_clean,
+                    "answer": "This was not covered in the current lecture.",
+                    "sources": [],
+                    "lecture_grounded": False,
+                }
+
+        # 4. Number / measurement questions
         is_number_query = any(w in q_lower for w in ["number", "percentage", "accuracy", "temperature", "metric", "gravity", "measurement", "value", "how much", "how many", "score", "rate"])
         if is_number_query:
             numbers = self._extract_numbers(lec_clean)
@@ -355,22 +473,27 @@ class HeuristicAIProvider(AIProvider):
                                 "lecture_grounded": True,
                             }
 
-        # 3. Topic, Concept, or General Content questions
+        # 5. Topic, Concept, or General Content questions
         stop_words = {
             "what", "is", "are", "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of",
             "with", "did", "does", "do", "how", "why", "can", "you", "tell", "me", "about", "explain",
             "simply", "simple", "teacher", "mention", "lecture", "taught", "today", "study", "class",
             "use", "uses", "used", "using", "which", "who", "whom", "where", "when", "there", "their",
-            "have", "has", "had", "having", "give", "gives", "given", "giving",
+            "have", "has", "had", "having", "give", "gives", "given", "giving", "that", "this", "it",
+            "one", "more", "much", "understand",
         }
         words = re.findall(r"[a-z0-9\u00b0\u00b2\u03c0]+", q_lower)
         keywords = [w for w in words if w not in stop_words and len(w) > 1]
+
+        # Follow-up pronoun reference: borrow keywords from previous subject
+        if not keywords and previous_subject:
+            sub_words = re.findall(r"[a-z0-9]+", previous_subject.lower())
+            keywords = [w for w in sub_words if w not in stop_words and len(w) > 1]
 
         best_sentence = None
         best_score = 0
 
         for s in sentences:
-            s_lower = s.lower()
             clean_s = re.sub(r"^(?:teacher|student|unknown):\s*", "", s, flags=re.IGNORECASE).strip()
             clean_s_lower = clean_s.lower()
 
@@ -385,7 +508,7 @@ class HeuristicAIProvider(AIProvider):
                     kws_matched += 1
 
             if kws_matched > 0:
-                if any(p in clean_s_lower for p in [" is ", " are ", " refers to ", " means ", " predict"]):
+                if any(p in clean_s_lower for p in [" is ", " are ", " refers to ", " means ", " predict", " uses "]):
                     score += 1
 
             if len(keywords) >= 2 and kws_matched < 2 and score < 6:
@@ -397,7 +520,7 @@ class HeuristicAIProvider(AIProvider):
 
         if best_sentence and best_score >= 2:
             answer_text = best_sentence
-            if "simply" in q_lower or "simple" in q_lower:
+            if is_simplify:
                 if "predicts" in answer_text.lower():
                     answer_text = re.sub(r"\bpredicts\b", "is used to predict", answer_text, flags=re.IGNORECASE)
                 elif not answer_text.lower().startswith("in simple terms"):
@@ -993,15 +1116,32 @@ class GeminiAIProvider(AIProvider):
 
         return self._parse_json_result(data, text)
 
-    async def answer_question(self, question: str, lecture_text: str) -> dict[str, Any]:
+    async def answer_question(
+        self,
+        question: str,
+        lecture_text: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+        lecture_structured_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if not self.api_key:
             raise AIStructuringError("GEMINI_API_KEY is not configured.")
 
         url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
+        history_text = ""
+        if conversation_history:
+            history_lines = []
+            for msg in conversation_history[-10:]:
+                role = "Student" if msg.get("role") == "user" else "Assistant"
+                content = msg.get("content", "")
+                history_lines.append(f"{role}: {content}")
+            if history_lines:
+                history_text = "\nRECENT CONVERSATION HISTORY:\n" + "\n".join(history_lines) + "\n"
+
         prompt = (
             f"{QA_SYSTEM_PROMPT}\n\n"
-            f"LECTURE CONTENT:\n{lecture_text}\n\n"
-            f"STUDENT QUESTION:\n{question}"
+            f"LECTURE CONTENT:\n{lecture_text}\n"
+            f"{history_text}\n"
+            f"CURRENT STUDENT QUESTION:\n{question}"
         )
         payload = {
             "contents": [
@@ -1092,21 +1232,31 @@ class OpenAIAIProvider(AIProvider):
 
         return self._parse_json_result(data, text)
 
-    async def answer_question(self, question: str, lecture_text: str) -> dict[str, Any]:
+    async def answer_question(
+        self,
+        question: str,
+        lecture_text: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+        lecture_structured_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if not self.api_key:
             raise AIStructuringError("OPENAI_API_KEY is not configured.")
+
+        messages = [
+            {"role": "system", "content": QA_SYSTEM_PROMPT},
+            {"role": "user", "content": f"LECTURE CONTENT:\n{lecture_text}"},
+        ]
+        if conversation_history:
+            for msg in conversation_history[-10:]:
+                role = "user" if msg.get("role") == "user" else "assistant"
+                messages.append({"role": role, "content": msg.get("content", "")})
+        messages.append({"role": "user", "content": question})
 
         payload = {
             "model": self.model,
             "response_format": {"type": "json_object"},
             "temperature": 0.1,
-            "messages": [
-                {"role": "system", "content": QA_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"LECTURE CONTENT:\n{lecture_text}\n\nSTUDENT QUESTION:\n{question}",
-                },
-            ],
+            "messages": messages,
         }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -1167,11 +1317,27 @@ class AIStructuringService:
             raise ValueError("Transcript text cannot be empty.")
         return await self._provider.structure_transcript(cleaned)
 
-    async def answer_question(self, question: str, lecture_text: str) -> dict[str, Any]:
+    async def answer_question(
+        self,
+        question: str,
+        lecture_text: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+        lecture_structured_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         q_cleaned = question.strip()
         if not q_cleaned:
             raise ValueError("Question cannot be empty.")
-        return await self._provider.answer_question(q_cleaned, lecture_text)
+        try:
+            return await self._provider.answer_question(
+                q_cleaned,
+                lecture_text,
+                conversation_history=conversation_history,
+                lecture_structured_data=lecture_structured_data,
+            )
+        except TypeError as err:
+            if "unexpected keyword argument" in str(err):
+                return await self._provider.answer_question(q_cleaned, lecture_text)
+            raise
 
 
 ai_structuring_service = AIStructuringService()

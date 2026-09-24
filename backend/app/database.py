@@ -66,6 +66,30 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
+
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversations_session_id
+            ON conversations(session_id);
+
+            CREATE TABLE IF NOT EXISTS conversation_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                sources TEXT,
+                lecture_grounded INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversation_messages_cid
+            ON conversation_messages(conversation_id, id);
             """
         )
         connection.commit()

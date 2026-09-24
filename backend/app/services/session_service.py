@@ -1,5 +1,6 @@
 """Session and transcript persistence, kept separate from HTTP routes."""
 
+import json
 import secrets
 import sqlite3
 from datetime import datetime, timezone
@@ -110,5 +111,110 @@ def add_transcript(
         "id": cursor.lastrowid,
         "session_id": session_id,
         "text": text,
+        "created_at": created_at,
+    }
+
+
+def create_conversation(
+    db: sqlite3.Connection,
+    session_id: str,
+    conversation_id: str | None = None,
+) -> dict:
+    """Create a new conversation session-scoped to the given lecture."""
+    cid = conversation_id or f"conv_{secrets.token_hex(6)}"
+    created_at = now_iso()
+    db.execute(
+        """
+        INSERT INTO conversations (id, session_id, created_at)
+        VALUES (?, ?, ?)
+        """,
+        (cid, session_id, created_at),
+    )
+    db.commit()
+    return {
+        "id": cid,
+        "session_id": session_id,
+        "created_at": created_at,
+    }
+
+
+def find_conversation(
+    db: sqlite3.Connection,
+    conversation_id: str,
+) -> dict | None:
+    """Find a conversation by ID."""
+    row = db.execute(
+        """
+        SELECT id, session_id, created_at
+        FROM conversations
+        WHERE id = ?
+        """,
+        (conversation_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_conversation_messages(
+    db: sqlite3.Connection,
+    conversation_id: str,
+    limit: int = 20,
+) -> list[dict]:
+    """Retrieve chronological messages for a conversation up to recent limit."""
+    rows = db.execute(
+        """
+        SELECT id, conversation_id, role, content, sources, lecture_grounded, created_at
+        FROM conversation_messages
+        WHERE conversation_id = ?
+        ORDER BY id ASC
+        """,
+        (conversation_id,),
+    ).fetchall()
+    messages = []
+    for r in rows:
+        try:
+            sources = json.loads(r["sources"]) if r["sources"] else []
+        except Exception:
+            sources = []
+        messages.append({
+            "id": r["id"],
+            "conversation_id": r["conversation_id"],
+            "role": r["role"],
+            "content": r["content"],
+            "sources": sources,
+            "lecture_grounded": bool(r["lecture_grounded"]),
+            "created_at": r["created_at"],
+        })
+    if limit and len(messages) > limit:
+        return messages[-limit:]
+    return messages
+
+
+def add_conversation_message(
+    db: sqlite3.Connection,
+    conversation_id: str,
+    role: str,
+    content: str,
+    sources: list[str] | None = None,
+    lecture_grounded: bool = True,
+) -> dict:
+    """Record a user or assistant message against a conversation."""
+    created_at = now_iso()
+    sources_json = json.dumps(sources or [])
+    grounded_int = 1 if lecture_grounded else 0
+    cursor = db.execute(
+        """
+        INSERT INTO conversation_messages (conversation_id, role, content, sources, lecture_grounded, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (conversation_id, role, content, sources_json, grounded_int, created_at),
+    )
+    db.commit()
+    return {
+        "id": cursor.lastrowid,
+        "conversation_id": conversation_id,
+        "role": role,
+        "content": content,
+        "sources": sources or [],
+        "lecture_grounded": lecture_grounded,
         "created_at": created_at,
     }
