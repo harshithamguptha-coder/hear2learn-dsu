@@ -92,8 +92,12 @@ export function createSession() {
   return request('/sessions', { method: 'POST' })
 }
 
-export function getSession(sessionId) {
-  return request(`/sessions/${encodeURIComponent(sessionId)}`)
+export function getSession(sessionId, token) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}`, { token })
+}
+
+export function getTranscript(sessionId, token) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/transcript`, { token })
 }
 
 export function endSession(sessionId) {
@@ -116,8 +120,8 @@ export function translateTranscript(sessionId, text, targetLanguage) {
   })
 }
 
-export function getLectureNotes(sessionId) {
-  return request(`/sessions/${encodeURIComponent(sessionId)}/notes`)
+export function getLectureNotes(sessionId, token) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/notes`, { token })
 }
 
 export function sessionStreamUrl(sessionId) {

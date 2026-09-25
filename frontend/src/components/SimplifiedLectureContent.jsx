@@ -18,7 +18,12 @@ export default function SimplifiedLectureContent({
         <p>Key points first, with important technical terms kept in their original form.</p>
       </header>
 
-      {error && <p className="message error" role="alert">{error}</p>}
+      {error && (
+        <p className="message info ai-fallback-status" role="status">
+          <span aria-hidden="true">ⓘ</span>
+          <span>{error}</span>
+        </p>
+      )}
 
       {!content.hasContent ? (
         <div className="empty-state">

@@ -1,3 +1,5 @@
+import { useNavigate, useSearchParams } from 'react-router-dom'
+
 import { useAuth } from '../context/AuthContext'
 import { useEffect, useRef, useState } from 'react'
 
@@ -11,16 +13,22 @@ import {
   saveAccessibilityPreference,
   structureTranscript,
 } from '../api/client'
-import LectureNotes from '../components/LectureNotes'
-import MyLectures from '../components/MyLectures'
-import SimplifiedLectureContent from '../components/SimplifiedLectureContent'
-import StructuredLectureView from '../components/StructuredLectureView'
-import TranscriptView from '../components/TranscriptView'
+import AppShell from '../components/AppShell'
+import SettingsView from '../components/SettingsView'
+import StudentJoin from '../components/StudentJoin'
+import StudentLectureList from '../components/StudentLectureList'
+import StudentLiveWorkspace from '../components/StudentLiveWorkspace'
+import StudentOverview from '../components/StudentOverview'
 import { useLectureContext } from '../context/LectureContext'
 import { useSessionStream } from '../hooks/useSessionStream'
+import { getAiFeatureError, isAiUnavailableError } from '../services/aiErrors'
 
 export default function StudentPage() {
-  const { user, token } = useAuth()
+  const { user, token, logout } = useAuth()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view = searchParams.get('view') || 'overview'
+  const activeView = ['overview', 'lectures', 'join', 'live', 'settings'].includes(view) ? view : 'overview'
   const {
     studentInput: input,
     setStudentInput: setInput,
@@ -43,6 +51,7 @@ export default function StudentPage() {
     studentLastStructuredText,
     setStudentLastStructuredText,
     teacherSession,
+    resetLectureState,
   } = useLectureContext()
 
   const [error, setError] = useState('')
@@ -70,6 +79,7 @@ export default function StudentPage() {
   const lastStructuredTextRef = useRef(studentLastStructuredText)
   const activeAttendanceSessionRef = useRef('')
   const preferenceRequestRef = useRef(0)
+  const aiUnavailableSessionRef = useRef('')
 
   function resetAccessibilityPreference() {
     preferenceRequestRef.current += 1
@@ -96,6 +106,16 @@ export default function StudentPage() {
   useEffect(() => {
     refreshMyLectures()
   }, [])
+
+  function changeView(nextView) {
+    setSearchParams({ view: nextView })
+  }
+
+  function handleLogout() {
+    resetLectureState()
+    logout()
+    navigate('/', { replace: true })
+  }
 
   async function recordAttendance(sessionId) {
     if (!user || user.role !== 'student' || activeAttendanceSessionRef.current === sessionId) {
@@ -182,6 +202,40 @@ export default function StudentPage() {
     }
   }
 
+  function handleViewLecture(lecture) {
+    const sessionId = lecture?.session_id
+    if (!sessionId) return
+    setInput(sessionId)
+    setStudentTranscript([])
+    setStructuredData(null)
+    setStructureError('')
+    setQaResult(null)
+    setStudentLastStructuredText('')
+    lastStructuredTextRef.current = ''
+    setNotes(null)
+    setNotesError('')
+    resetAccessibilityPreference()
+    setJoining(true)
+    setError('')
+    getSession(sessionId)
+      .then((foundSession) => {
+        if (foundSession.status === 'active' && activeAttendanceSessionRef.current !== sessionId) {
+          return recordAttendance(sessionId).then((saved) => {
+            if (saved) {
+              setSession(foundSession)
+              changeView('live')
+            }
+            return saved
+          })
+        }
+        setSession(foundSession)
+        changeView('live')
+        return true
+      })
+      .catch((requestError) => setError(`Could not open this lecture: ${requestError.message}`))
+      .finally(() => setJoining(false))
+  }
+
   async function handleLeaveLecture() {
     if (!session || leaving) return
     setLeaving(true)
@@ -200,6 +254,7 @@ export default function StudentPage() {
       lastStructuredTextRef.current = ''
       resetAccessibilityPreference()
       await refreshMyLectures()
+      changeView('overview')
     } catch (leaveError) {
       setError(`Could not leave the lecture: ${leaveError.message}`)
     } finally {
@@ -218,7 +273,10 @@ export default function StudentPage() {
     let cancelled = false
     setInput(teacherSession.session_id)
     recordAttendance(teacherSession.session_id).then((attendanceSaved) => {
-      if (!cancelled && attendanceSaved) setSession(teacherSession)
+      if (!cancelled && attendanceSaved) {
+        setSession(teacherSession)
+        setSearchParams({ view: 'live' })
+      }
     })
     return () => {
       cancelled = true
@@ -300,6 +358,7 @@ export default function StudentPage() {
         if (!attendanceSaved) return
       }
       setSession(foundSession)
+      changeView('live')
     } catch (requestError) {
       setError(
         requestError.status === 404
@@ -313,7 +372,9 @@ export default function StudentPage() {
 
   // 1500ms debounced transcript structuring
   useEffect(() => {
-    if (!session?.session_id) return
+    const sessionId = session?.session_id
+    if (!sessionId) return
+    if (aiUnavailableSessionRef.current === sessionId) return
 
     const fullText = transcript.map((item) => item.text).join(' ').trim()
     if (!fullText) return
@@ -321,22 +382,30 @@ export default function StudentPage() {
     if (structuredData && (fullText === lastStructuredTextRef.current || fullText === studentLastStructuredText)) return
 
     const delay = structuredData ? 1500 : 250
+    let cancelled = false
     const timer = setTimeout(async () => {
       setStructuring(true)
       try {
-        const result = await structureTranscript(session.session_id, fullText)
+        const result = await structureTranscript(sessionId, fullText)
+        if (cancelled) return
+        aiUnavailableSessionRef.current = ''
         setStructuredData(result)
         lastStructuredTextRef.current = fullText
         setStudentLastStructuredText(fullText)
         setStructureError('')
-      } catch (err) {
-        setStructureError(err.message || 'Could not update structured lecture notes.')
+      } catch (error) {
+        if (cancelled) return
+        if (isAiUnavailableError(error)) aiUnavailableSessionRef.current = sessionId
+        setStructureError(getAiFeatureError(error, 'AI lesson insights'))
       } finally {
-        setStructuring(false)
+        if (!cancelled) setStructuring(false)
       }
     }, delay)
 
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [
     session?.session_id,
     transcript,
@@ -354,182 +423,22 @@ export default function StudentPage() {
     reconnecting: 'Reconnecting…',
     ended: 'Lecture finished',
   }[connectionState] || 'Not connected'
+  let content
+  if (activeView === 'join') {
+    content = <StudentJoin input={input} onInputChange={(event) => setInput(event.target.value)} onSubmit={handleJoin} joining={joining} error={error} />
+  } else if (activeView === 'lectures') {
+    content = <StudentLectureList lectures={myLectures} loading={myLecturesLoading} error={myLecturesError} onViewLecture={handleViewLecture} />
+  } else if (activeView === 'settings') {
+    content = <SettingsView user={user} role="student" onLogout={handleLogout} />
+  } else if (activeView === 'live' && session) {
+    content = <StudentLiveWorkspace user={user} session={session} transcript={transcript} connectionLabel={connectionLabel} accessibilityMode={accessibilityMode} onModeChange={persistAccessibility} translationLanguage={translationLanguage} onTranslationLanguageChange={(language) => persistAccessibility('translation', language)} preferenceAvailable={preferenceAvailable} preferenceLoading={preferenceLoading} preferenceSaving={preferenceSaving} preferenceError={preferenceError} onLeave={handleLeaveLecture} leaving={leaving} structuredData={structuredData} structuring={structuring} structureError={structureError} notes={notes} notesLoading={notesLoading} notesError={notesError} qaResult={qaResult} setQaResult={setQaResult} questionInput={questionInput} setQuestionInput={setQuestionInput} conversationId={conversationId} setConversationId={setConversationId} conversationMessages={conversationMessages} setConversationMessages={setConversationMessages} />
+  } else {
+    content = <StudentOverview user={user} lectures={myLectures} loading={myLecturesLoading} error={myLecturesError} session={session} onViewChange={changeView} onViewLecture={handleViewLecture} />
+  }
 
   return (
-    <main className="shell page-shell">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Student workspace</p>
-          <h1>Join a live lecture</h1>
-          <p>Welcome, {user?.name}. Enter the session ID from your teacher to join the live classroom.</p>
-        </div>
-        <span className="page-number" aria-hidden="true">02</span>
-      </div>
-
-      <MyLectures
-        lectures={myLectures}
-        loading={myLecturesLoading}
-        error={myLecturesError}
-      />
-
-      <section className="join-card" aria-label="Join a lecture">
-        <form onSubmit={handleJoin}>
-          <label htmlFor="session-id">Lecture session ID</label>
-          <div className="join-row">
-            <input
-              id="session-id"
-              name="session-id"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="For example: 9A7F3C21"
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck="false"
-              maxLength="16"
-              aria-describedby="session-help"
-            />
-            <button className="primary-button" type="submit" disabled={joining}>
-              {joining ? 'Joining…' : 'Join Lecture'}
-            </button>
-          </div>
-          <p id="session-help">Session IDs are made of letters and numbers.</p>
-        </form>
-        {error && <p className="message error" role="alert">{error}</p>}
-      </section>
-
-      {session && (
-        <section className="joined-session" aria-labelledby="joined-title">
-          <div>
-            <p className="eyebrow">You are in</p>
-            <h2 id="joined-title">Lecture {session.session_id}</h2>
-          </div>
-          <span className="connection-state" role="status">
-            <span aria-hidden="true" /> {connectionLabel}
-          </span>
-          {session.status === 'ended' ? (
-            <p className="message info">This lecture has ended. The saved transcript is still available.</p>
-          ) : (
-            <button
-              className="secondary-button leave-button"
-              type="button"
-              onClick={handleLeaveLecture}
-              disabled={leaving}
-            >
-              {leaving ? 'Leaving…' : 'Leave Lecture'}
-            </button>
-          )}
-        </section>
-      )}
-
-      {session && (
-        <section className="accessibility-panel" aria-labelledby="accessibility-mode-title">
-          <div className="accessibility-panel-copy">
-            <p className="eyebrow">Your lecture view</p>
-            <h2 id="accessibility-mode-title">Accessibility mode</h2>
-            <p>
-              Choose how this lecture is presented to you. Your choice is saved
-              only for your account in this lecture.
-            </p>
-          </div>
-          <div className="accessibility-controls">
-            <div className="accessibility-mode-control">
-              <label htmlFor="accessibility-mode">Lecture mode</label>
-              <select
-                id="accessibility-mode"
-                value={accessibilityMode}
-                onChange={(event) => persistAccessibility(event.target.value)}
-                disabled={!preferenceAvailable || preferenceLoading || preferenceSaving}
-                aria-describedby="accessibility-mode-help accessibility-save-status"
-              >
-                <option value="standard">Standard</option>
-                <option value="simplified">Simplified</option>
-                <option value="translation">Translation</option>
-                <option value="sign_support">Sign Support</option>
-              </select>
-              <small id="accessibility-mode-help">
-                Other students can use different modes in this same lecture.
-              </small>
-            </div>
-
-            {accessibilityMode === 'translation' && (
-              <div className="language-control">
-                <label htmlFor="translation-language">Translation language</label>
-                <select
-                  id="translation-language"
-                  value={translationLanguage}
-                  onChange={(event) => persistAccessibility('translation', event.target.value)}
-                  disabled={preferenceSaving}
-                  aria-describedby="translation-help"
-                >
-                  <option value="kn">Kannada</option>
-                  <option value="hi">Hindi</option>
-                  <option value="te">Telugu</option>
-                </select>
-                <small id="translation-help">The original English always stays visible.</small>
-              </div>
-            )}
-
-            <p
-              id="accessibility-save-status"
-              className={`accessibility-save-status ${preferenceError ? 'error' : ''}`}
-              role="status"
-              aria-live="polite"
-            >
-              {preferenceError || (
-                preferenceLoading
-                  ? 'Loading your saved mode…'
-                  : preferenceSaving
-                    ? 'Saving your mode…'
-                    : 'Saved for this lecture.'
-              )}
-            </p>
-          </div>
-        </section>
-      )}
-
-      {session ? (
-        <div className="student-lecture-layout">
-          {(notes || notesLoading || notesError) && (
-            <LectureNotes notes={notes} loading={notesLoading} error={notesError} />
-          )}
-
-          {accessibilityMode === 'simplified' ? (
-            <SimplifiedLectureContent
-              items={transcript}
-              structuredData={structuredData}
-              loading={structuring}
-              error={structureError}
-            />
-          ) : (
-            <TranscriptView
-              items={transcript}
-              emptyText="The transcript will appear here as soon as the teacher starts speaking."
-              sessionId={session.session_id}
-              translationLanguage={translationLanguage}
-              accessibilityMode={accessibilityMode}
-            />
-          )}
-
-          <StructuredLectureView
-            structuredData={structuredData}
-            loading={structuring}
-            error={structureError}
-            sessionId={session.session_id}
-            qaResult={qaResult}
-            setQaResult={setQaResult}
-            questionInput={questionInput}
-            setQuestionInput={setQuestionInput}
-            conversationId={conversationId}
-            setConversationId={setConversationId}
-            conversationMessages={conversationMessages}
-            setConversationMessages={setConversationMessages}
-          />
-        </div>
-      ) : (
-        <div className="waiting-card" aria-hidden="true">
-          <span>Join a lecture to see its live transcript.</span>
-        </div>
-      )}
-    </main>
+    <AppShell user={user} role="student" activeView={activeView} liveLecture={session?.status === 'active' ? session : null} onLogout={handleLogout}>
+      {content}
+    </AppShell>
   )
 }

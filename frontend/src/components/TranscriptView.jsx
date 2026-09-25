@@ -1,5 +1,4 @@
-import SignRepresentation from './SignRepresentation'
-import TranslationLine from './TranslationLine'
+import { useEffect, useRef } from 'react'
 
 function formatTime(value) {
   return new Intl.DateTimeFormat(undefined, {
@@ -13,15 +12,24 @@ export default function TranscriptView({
   items,
   interimText = '',
   emptyText,
-  sessionId = '',
-  translationLanguage = 'en',
-  accessibilityMode = 'standard',
+  isLive = true,
+  id = '',
+  tabIndex = -1,
+  className = '',
 }) {
+  const transcriptListRef = useRef(null)
+  const latestItem = items[items.length - 1]
+
+  useEffect(() => {
+    if (!transcriptListRef.current || !latestItem?.id) return
+    transcriptListRef.current.scrollTo({ top: transcriptListRef.current.scrollHeight, behavior: 'smooth' })
+  }, [latestItem?.id, items.length])
+
   return (
-    <section className="transcript-panel" aria-labelledby="transcript-title">
+    <section id={id || undefined} tabIndex={tabIndex} className={`transcript-panel ${className}`.trim()} aria-labelledby={`${id || 'transcript'}-title`}>
       <div className="panel-heading">
-        <h2 id="transcript-title">Live transcript</h2>
-        <span className="live-label"><span aria-hidden="true" /> Live</span>
+        <h2 id={`${id || 'transcript'}-title`}>{isLive ? 'Live captions' : 'Lecture captions'}</h2>
+        <span className={`live-label ${isLive ? 'is-live' : 'is-ended'}`}><span aria-hidden="true" /> {isLive ? 'LIVE' : 'ENDED'}</span>
       </div>
 
       {interimText && (
@@ -36,22 +44,13 @@ export default function TranscriptView({
           <p>{emptyText}</p>
         </div>
       ) : (
-        <ol className="transcript-list" aria-live="polite" aria-relevant="additions">
-          {items.map((item) => (
-            <li key={item.id}>
+        <ol className="transcript-list" ref={transcriptListRef} aria-live="polite" aria-relevant="additions">
+          {items.map((item, index) => (
+            <li key={item.id} className={index === items.length - 1 ? 'is-latest' : ''}>
               <time dateTime={item.created_at}>{formatTime(item.created_at)}</time>
               <div className="transcript-text">
                 <p lang="en">{item.text}</p>
-                {accessibilityMode === 'translation' && (
-                  <TranslationLine
-                    sessionId={sessionId}
-                    text={item.text}
-                    language={translationLanguage}
-                  />
-                )}
-                {accessibilityMode === 'sign_support' && (
-                  <SignRepresentation sessionId={sessionId} text={item.text} />
-                )}
+                {index === items.length - 1 && <span className="latest-caption-label">Newest caption</span>}
               </div>
             </li>
           ))}

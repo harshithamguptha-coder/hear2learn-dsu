@@ -19,6 +19,21 @@ export function LectureProvider({ children }) {
   const [studentConversationId, setStudentConversationId] = useState(null)
   const [studentConversationMessages, setStudentConversationMessages] = useState([])
 
+  function resetLectureState() {
+    setTeacherSession(null)
+    setTeacherTranscript([])
+    setStudentInput('')
+    setStudentSession(null)
+    setStudentTranscript([])
+    setStudentStructuredData(null)
+    setStudentStructureError('')
+    setStudentQaResult(null)
+    setStudentQuestionInput('')
+    setStudentLastStructuredText('')
+    setStudentConversationId(null)
+    setStudentConversationMessages([])
+  }
+
   return (
     <LectureContext.Provider
       value={{
@@ -46,6 +61,7 @@ export function LectureProvider({ children }) {
         setStudentConversationId,
         studentConversationMessages,
         setStudentConversationMessages,
+        resetLectureState,
       }}
     >
       {children}

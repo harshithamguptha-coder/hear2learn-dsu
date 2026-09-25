@@ -1198,14 +1198,29 @@ class GeminiAIProvider(AIProvider):
 class OpenAIAIProvider(AIProvider):
     """OpenAI API provider."""
 
-    def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str | None = None, model: str | None = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
-        self.model = model
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.url = "https://api.openai.com/v1/chat/completions"
+
+    def _missing_key_error(self) -> AIStructuringError:
+        return AIStructuringError("OPENAI_API_KEY is not configured.")
+
+    def _request_error(self, response: httpx.Response) -> AIStructuringError:
+        return AIStructuringError(f"OpenAI API returned {response.status_code}: {response.text}")
+
+    def _network_error(self, error: Exception) -> AIStructuringError:
+        return AIStructuringError(f"Network error communicating with OpenAI API: {error}")
+
+    def _structure_parse_error(self, error: Exception) -> AIStructuringError:
+        return AIStructuringError(f"Failed to parse OpenAI structuring response: {error}")
+
+    def _qa_parse_error(self, error: Exception) -> AIStructuringError:
+        return AIStructuringError(f"Failed to parse OpenAI Q&A response: {error}")
 
     async def structure_transcript(self, text: str) -> dict[str, Any]:
         if not self.api_key:
-            raise AIStructuringError("OPENAI_API_KEY is not configured.")
+            raise self._missing_key_error()
 
         payload = {
             "model": self.model,
@@ -1225,10 +1240,10 @@ class OpenAIAIProvider(AIProvider):
             async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(self.url, json=payload, headers=headers)
                 if res.status_code != 200:
-                    raise AIStructuringError(f"OpenAI API returned {res.status_code}: {res.text}")
+                    raise self._request_error(res)
                 data = res.json()
         except httpx.RequestError as exc:
-            raise AIStructuringError(f"Network error communicating with OpenAI API: {exc}") from exc
+            raise self._network_error(exc) from exc
 
         return self._parse_json_result(data, text)
 
@@ -1240,7 +1255,7 @@ class OpenAIAIProvider(AIProvider):
         lecture_structured_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
-            raise AIStructuringError("OPENAI_API_KEY is not configured.")
+            raise self._missing_key_error()
 
         messages = [
             {"role": "system", "content": QA_SYSTEM_PROMPT},
@@ -1267,10 +1282,10 @@ class OpenAIAIProvider(AIProvider):
             async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(self.url, json=payload, headers=headers)
                 if res.status_code != 200:
-                    raise AIStructuringError(f"OpenAI API returned {res.status_code}: {res.text}")
+                    raise self._request_error(res)
                 data = res.json()
         except httpx.RequestError as exc:
-            raise AIStructuringError(f"Network error communicating with OpenAI API: {exc}") from exc
+            raise self._network_error(exc) from exc
 
         return self._parse_qa_result(data, question)
 
@@ -1280,7 +1295,7 @@ class OpenAIAIProvider(AIProvider):
             parsed = json.loads(raw_json_str)
             return _parse_structured_json(parsed, fallback_text)
         except (KeyError, json.JSONDecodeError, ValueError) as exc:
-            raise AIStructuringError(f"Failed to parse OpenAI structuring response: {exc}") from exc
+            raise self._structure_parse_error(exc) from exc
 
     def _parse_qa_result(self, response_data: dict, question: str) -> dict[str, Any]:
         try:
@@ -1293,19 +1308,64 @@ class OpenAIAIProvider(AIProvider):
                 "lecture_grounded": bool(parsed.get("lecture_grounded", False)),
             }
         except (KeyError, json.JSONDecodeError, ValueError) as exc:
-            raise AIStructuringError(f"Failed to parse OpenAI Q&A response: {exc}") from exc
+            raise self._qa_parse_error(exc) from exc
+
+
+class GroqAIProvider(OpenAIAIProvider):
+    """Groq's OpenAI-compatible chat-completions provider."""
+
+    def __init__(self, api_key: str | None = None, model: str | None = None):
+        self.api_key = api_key or os.getenv("GROQ_API_KEY", "")
+        self.model = model or os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+        base_url = os.getenv(
+            "GROQ_BASE_URL",
+            "https://api.groq.com/openai/v1",
+        ).rstrip("/")
+        self.url = f"{base_url}/chat/completions"
+
+    def _missing_key_error(self) -> AIStructuringError:
+        return AIStructuringError("GROQ_API_KEY is not configured.")
+
+    def _request_error(self, response: httpx.Response) -> AIStructuringError:
+        return AIStructuringError(f"Groq API returned {response.status_code}: {response.text}")
+
+    def _network_error(self, error: Exception) -> AIStructuringError:
+        return AIStructuringError(f"Network error communicating with Groq API: {error}")
+
+    def _structure_parse_error(self, error: Exception) -> AIStructuringError:
+        return AIStructuringError(f"Failed to parse Groq structuring response: {error}")
+
+    def _qa_parse_error(self, error: Exception) -> AIStructuringError:
+        return AIStructuringError(f"Failed to parse Groq Q&A response: {error}")
 
 
 class AIStructuringService:
     """Singleton service manager for lecture structuring and Q&A."""
 
     def __init__(self):
-        if os.getenv("GEMINI_API_KEY"):
-            self._provider: AIProvider = GeminiAIProvider()
-        elif os.getenv("OPENAI_API_KEY"):
-            self._provider = OpenAIAIProvider()
+        selected_provider = os.getenv("AI_PROVIDER", "auto").strip().lower()
+
+        if selected_provider in {"heuristic", "local", "none"}:
+            self._provider: AIProvider = HeuristicAIProvider()
+        elif selected_provider == "groq":
+            self._provider = GroqAIProvider() if os.getenv("GROQ_API_KEY", "").strip() else HeuristicAIProvider()
+        elif selected_provider == "openai":
+            self._provider = OpenAIAIProvider() if os.getenv("OPENAI_API_KEY", "").strip() else HeuristicAIProvider()
+        elif selected_provider == "gemini":
+            self._provider = GeminiAIProvider() if os.getenv("GEMINI_API_KEY", "").strip() else HeuristicAIProvider()
+        elif selected_provider in {"", "auto"}:
+            if os.getenv("GEMINI_API_KEY", "").strip():
+                self._provider = GeminiAIProvider()
+            elif os.getenv("GROQ_API_KEY", "").strip():
+                self._provider = GroqAIProvider()
+            elif os.getenv("OPENAI_API_KEY", "").strip():
+                self._provider = OpenAIAIProvider()
+            else:
+                self._provider = HeuristicAIProvider()
         else:
-            self._provider = HeuristicAIProvider()
+            raise ValueError(
+                f"Unsupported AI_PROVIDER '{selected_provider}'. Use groq, openai, gemini, heuristic, or auto."
+            )
 
     def set_provider(self, provider: AIProvider) -> None:
         """Swap provider dynamically (used for testing or runtime reconfiguration)."""

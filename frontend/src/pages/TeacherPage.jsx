@@ -1,19 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { createLecture, endSession, saveTranscript } from '../api/client'
-import TeacherDashboard from '../components/TeacherDashboard'
+import { createLecture, endSession, getTeacherDashboard, getTranscript, saveTranscript } from '../api/client'
+import AppShell from '../components/AppShell'
+import SettingsView from '../components/SettingsView'
+import TeacherAnalytics from '../components/TeacherAnalytics'
+import TeacherLectureDetail from '../components/TeacherLectureDetail'
+import TeacherLectureList from '../components/TeacherLectureList'
+import TeacherLectureStudio from '../components/TeacherLectureStudio'
+import TeacherOverview from '../components/TeacherOverview'
 import { useAuth } from '../context/AuthContext'
 import { useLectureContext } from '../context/LectureContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
+function mergeTranscript(current, incoming) {
+  const byId = new Map(current.map((item) => [item.id, item]))
+  incoming.forEach((item) => byId.set(item.id, item))
+  return [...byId.values()].sort((first, second) => first.id - second.id)
+}
+
 function mergeItem(current, newItem) {
-  return current.some((item) => item.id === newItem.id)
-    ? current
-    : [...current, newItem]
+  return mergeTranscript(current, [newItem])
 }
 
 export default function TeacherPage() {
-  const { user, token } = useAuth()
+  const { user, token, logout } = useAuth()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view = searchParams.get('view') || 'overview'
+  const selectedSessionId = searchParams.get('session') || ''
   const {
     teacherSession: session,
     setTeacherSession: setSession,
@@ -27,6 +42,7 @@ export default function TeacherPage() {
     setStudentQaResult,
     setStudentQuestionInput,
     setStudentLastStructuredText,
+    resetLectureState,
   } = useLectureContext()
 
   const [actionError, setActionError] = useState('')
@@ -34,7 +50,45 @@ export default function TeacherPage() {
   const [copied, setCopied] = useState(false)
   const [manualText, setManualText] = useState('')
   const [lectureTitle, setLectureTitle] = useState('Untitled Lecture')
+  const [lectureSubject, setLectureSubject] = useState('')
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0)
+  const [activeLecture, setActiveLecture] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getTeacherDashboard(token)
+      .then((dashboard) => {
+        if (cancelled) return
+        const liveLecture = dashboard.lectures?.find((lecture) => lecture.status === 'active') || null
+        setActiveLecture(liveLecture)
+        setSession((current) => {
+          if (liveLecture) return current?.status === 'active' ? current : liveLecture
+          return current?.status === 'active' ? null : current
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setActiveLecture(null)
+      })
+    return () => { cancelled = true }
+  }, [token, dashboardRefreshKey])
+
+  useEffect(() => {
+    const sessionId = session?.session_id
+    if (!sessionId) {
+      setTranscript([])
+      return undefined
+    }
+    let cancelled = false
+    setTranscript([])
+    getTranscript(sessionId, token)
+      .then((savedItems) => {
+        if (!cancelled) setTranscript((current) => mergeTranscript(current, savedItems))
+      })
+      .catch(() => {
+        // Existing in-memory captions remain available if this refresh fails.
+      })
+    return () => { cancelled = true }
+  }, [session?.session_id, token, setTranscript])
 
   const sessionRef = useRef(session)
   useEffect(() => {
@@ -43,34 +97,63 @@ export default function TeacherPage() {
 
   const handleFinalText = useCallback(async (text) => {
     const currentSession = sessionRef.current
-    console.log('[Teacher] handleFinalText called with text:', text, 'session:', currentSession)
 
-    if (!currentSession || currentSession.status !== 'active') {
-      console.warn('[Teacher] Ignored transcript: no active lecture session.')
-      return
-    }
+    if (!currentSession || currentSession.status !== 'active') return
+
+    const sessionId = currentSession.session_id
 
     try {
-      const savedItem = await saveTranscript(currentSession.session_id, text)
-      console.log('[Teacher] Transcript chunk saved to backend:', savedItem)
+      const savedItem = await saveTranscript(sessionId, text)
+      if (sessionRef.current?.session_id !== sessionId) return
       setTranscript((current) => mergeItem(current, savedItem))
       setActionError('')
     } catch (error) {
-      console.error('[Teacher] Error saving transcript:', error)
       setActionError(`Could not save transcript: ${error.message}`)
     }
   }, [setTranscript])
 
   const speech = useSpeechRecognition(handleFinalText)
 
+  function changeView(nextView) {
+    setSearchParams({ view: nextView })
+  }
+
+  async function handleLogout() {
+    speech.stopListening()
+    const lectureToEnd = activeLecture || session
+    if (lectureToEnd?.status === 'active') {
+      try {
+        const endedSession = await endSession(lectureToEnd.session_id)
+        setSession(endedSession)
+        setActiveLecture(null)
+      } catch {
+        setActionError('The lecture could not be ended before logout. Please try again.')
+        return
+      }
+    }
+    resetLectureState()
+    setActiveLecture(null)
+    logout()
+    navigate('/', { replace: true })
+  }
+
+  function handleViewLecture(lecture) {
+    if (!lecture?.session_id) return
+    setSearchParams({ view: 'lecture', session: lecture.session_id })
+  }
+
   async function handleStartLecture() {
     setBusyAction('start')
     setActionError('')
     setCopied(false)
     try {
-      const newSession = await createLecture(lectureTitle.trim() || 'Untitled Lecture', token)
-      console.log('[Teacher] Created new lecture session:', newSession)
+      const fullTitle = [lectureTitle.trim() || 'Untitled Lecture', lectureSubject.trim()]
+        .filter(Boolean)
+        .join(' — ')
+        .slice(0, 200)
+      const newSession = await createLecture(fullTitle, token)
       setSession(newSession)
+      setActiveLecture(newSession)
       setTranscript([])
       setStudentSession(newSession)
       setStudentInput(newSession.session_id)
@@ -96,6 +179,7 @@ export default function TeacherPage() {
     try {
       const endedSession = await endSession(session.session_id)
       setSession(endedSession)
+      setActiveLecture(null)
       setStudentSession(endedSession)
       setDashboardRefreshKey((value) => value + 1)
     } catch (error) {
@@ -103,6 +187,16 @@ export default function TeacherPage() {
     } finally {
       setBusyAction('')
     }
+  }
+
+  function handleStartAnotherLecture() {
+    setSession(null)
+    setTranscript([])
+    setActionError('')
+    setCopied(false)
+    setManualText('')
+    setLectureTitle('Untitled Lecture')
+    setLectureSubject('')
   }
 
   async function handleCopy() {
@@ -122,133 +216,25 @@ export default function TeacherPage() {
     await handleFinalText(text)
   }
 
+  const activeView = ['overview', 'lectures', 'lecture', 'new', 'analytics', 'settings'].includes(view) ? view : 'overview'
+  let content
+  if (activeView === 'lectures') {
+    content = <TeacherLectureList token={token} refreshKey={dashboardRefreshKey} onViewLecture={handleViewLecture} />
+  } else if (activeView === 'lecture' && selectedSessionId) {
+    content = <TeacherLectureDetail sessionId={selectedSessionId} token={token} onBack={() => changeView('lectures')} />
+  } else if (activeView === 'new') {
+    content = <TeacherLectureStudio session={session} lectureTitle={lectureTitle} onLectureTitleChange={setLectureTitle} lectureSubject={lectureSubject} onLectureSubjectChange={setLectureSubject} onStart={handleStartLecture} onEnd={handleEndLecture} onCopy={handleCopy} copied={copied} busyAction={busyAction} actionError={actionError} speech={speech} transcript={transcript} interimText={speech.interimText} manualText={manualText} onManualTextChange={setManualText} onManualSubmit={handleManualSubmit} onBackToOverview={() => changeView('overview')} onStartAnotherLecture={handleStartAnotherLecture} />
+  } else if (activeView === 'analytics') {
+    content = <TeacherAnalytics token={token} refreshKey={dashboardRefreshKey} />
+  } else if (activeView === 'settings') {
+    content = <SettingsView user={user} role="teacher" onLogout={handleLogout} />
+  } else {
+    content = <TeacherOverview token={token} refreshKey={dashboardRefreshKey} onViewChange={changeView} onViewLecture={handleViewLecture} />
+  }
+
   return (
-    <main className="shell page-shell">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Teacher workspace</p>
-          <h1>Teacher dashboard</h1>
-          <p>Welcome, {user?.name}. Review your stored lecture records or start a live classroom.</p>
-        </div>
-        <span className="page-number" aria-hidden="true">01</span>
-      </div>
-
-      <TeacherDashboard token={token} refreshKey={dashboardRefreshKey} />
-
-      <section className="control-card" aria-label="Lecture controls">
-        <div className="lecture-title-control">
-          <label htmlFor="lecture-title" className="field-label">Lecture title</label>
-          <input
-            id="lecture-title"
-            value={lectureTitle}
-            onChange={(event) => setLectureTitle(event.target.value)}
-            placeholder="For example: Introduction to Python"
-            maxLength={200}
-            disabled={Boolean(busyAction) || session?.status === 'active'}
-          />
-        </div>
-        <div className="control-row">
-          <button
-            className="primary-button"
-            type="button"
-            onClick={handleStartLecture}
-            disabled={Boolean(busyAction) || session?.status === 'active'}
-          >
-            {busyAction === 'start' ? 'Starting…' : 'Start Lecture'}
-          </button>
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={handleEndLecture}
-            disabled={!session || session.status !== 'active' || Boolean(busyAction)}
-          >
-            {busyAction === 'end' ? 'Ending…' : 'End Lecture'}
-          </button>
-          {session?.status === 'active' && (
-            <button
-              className={`secondary-button microphone-button ${speech.microphoneOn ? 'active' : ''}`}
-              type="button"
-              onClick={speech.microphoneOn ? speech.stopListening : speech.startListening}
-              disabled={speech.isRequesting}
-            >
-              <span className={speech.microphoneOn ? 'mic-dot active' : 'mic-dot'} aria-hidden="true" />
-              {speech.isRequesting
-                ? 'Requesting Permission…'
-                : speech.microphoneOn
-                  ? 'Stop Microphone'
-                  : 'Enable Microphone'}
-            </button>
-          )}
-        </div>
-
-        {session && (
-          <div className="session-panel">
-            <div>
-              <span className="field-label">Student session ID</span>
-              <strong className="session-id">{session.session_id}</strong>
-            </div>
-            <button className="copy-button" type="button" onClick={handleCopy}>
-              {copied ? 'Copied!' : 'Copy ID'}
-            </button>
-            <span className={`status-badge ${session.status}`}>{session.status}</span>
-          </div>
-        )}
-
-        {session?.status === 'active' && (
-          <div className="microphone-feedback">
-            {speech.microphoneOn ? (
-              <p className="message microphone-on" role="status">
-                <span aria-hidden="true">🎙️</span> Microphone ON
-                {speech.isListening ? ' — listening for speech' : ' — starting speech recognition'}
-              </p>
-            ) : speech.isRequesting ? (
-              <p className="message info" role="status">
-                <span aria-hidden="true">🎙️</span> Allow microphone access in your browser…
-              </p>
-            ) : speech.error ? (
-              <p className="message error" role="alert">
-                <span aria-hidden="true">⚠️</span> {speech.error}
-              </p>
-            ) : !speech.supported ? (
-              <p className="message error" role="alert">
-                <span aria-hidden="true">⚠️</span> {speech.supportError || 'Web Speech API not supported.'}
-              </p>
-            ) : (
-              <p className="message info" role="status">
-                <span aria-hidden="true">🎙️</span> Microphone is off.
-              </p>
-            )}
-          </div>
-        )}
-
-        {session?.status === 'active' && (
-          <form className="manual-speech-form" onSubmit={handleManualSubmit}>
-            <label htmlFor="manual-speech-input" className="field-label">
-              Manual Speech Input (Type or Paste Speech)
-            </label>
-            <div className="manual-speech-row">
-              <input
-                id="manual-speech-input"
-                type="text"
-                value={manualText}
-                onChange={(e) => setManualText(e.target.value)}
-                placeholder="Type or paste lecture text (e.g. 'Today we are studying supervised learning...')"
-                autoComplete="off"
-              />
-              <button className="primary-button" type="submit" disabled={!manualText.trim()}>
-                Send Speech
-              </button>
-            </div>
-          </form>
-        )}
-        {actionError && <p className="message error" role="alert">{actionError}</p>}
-      </section>
-
-      {session && (
-        <section className="teacher-session-summary" aria-label="Current lecture">
-          <p>Transcript is available to joined Students in the Student dashboard.</p>
-        </section>
-      )}
-    </main>
+    <AppShell user={user} role="teacher" activeView={activeView === 'lecture' ? 'lectures' : activeView} liveLecture={activeLecture} onLogout={handleLogout}>
+      {content}
+    </AppShell>
   )
 }

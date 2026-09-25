@@ -54,6 +54,8 @@ function Header() {
     navigate('/', { replace: true })
   }
 
+  if (user) return null
+
   return (
     <header className="site-header">
       <Link className="brand" to="/">

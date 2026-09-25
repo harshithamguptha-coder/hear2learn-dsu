@@ -74,6 +74,43 @@ py -3 -m venv .venv
 The API is available at **http://127.0.0.1:8000** and interactive API docs at
 **http://127.0.0.1:8000/docs**.
 
+## Groq AI setup
+
+The backend is already configured to use Groq for AI lesson insights and the
+Lecture Assistant through Groq's OpenAI-compatible API. The local, Git-ignored
+configuration file is:
+
+```text
+C:\Users\Harshitha\OneDrive\Desktop\dsu\backend\.env
+```
+
+Open it in Notepad and paste the key after `GROQ_API_KEY=`:
+
+```dotenv
+AI_PROVIDER=groq
+GROQ_API_KEY=replace_with_your_groq_key
+GROQ_MODEL=openai/gpt-oss-20b
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+```
+
+Do not add quotes around the key and do not commit `.env`. The safe template is
+`backend/.env.example`. After saving the key, install the updated dependency and
+verify the key without printing it:
+
+```powershell
+cd C:\Users\Harshitha\OneDrive\Desktop\dsu\backend
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe verify_groq.py
+```
+
+Then restart Uvicorn. The provider is selected once at backend startup, so a
+restart is required after pasting or changing the key. If `GROQ_API_KEY` is
+blank, the app safely uses its existing local heuristic provider. Groq powers
+optional transcript structuring and Lecture Assistant Q&A; browser speech
+recognition, captions, translation, attendance, and stored lecture data are
+unchanged.
+
+
 ## Run the frontend
 
 Install **Node.js 20 or newer**, open a second PowerShell, and run:

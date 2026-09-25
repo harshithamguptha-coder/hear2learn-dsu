@@ -3,6 +3,10 @@ concepts, terms, and lecture-grounded Q&A.
 """
 
 import asyncio
+import json
+import os
+
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -10,6 +14,8 @@ from app.models import LectureQARequest, SpeakerSegment
 from app.services.ai_structuring import (
     AIProvider,
     AIStructuringError,
+    AIStructuringService,
+    GroqAIProvider,
     HeuristicAIProvider,
     ai_structuring_service,
 )
@@ -97,6 +103,76 @@ def reset_provider():
     original = ai_structuring_service._provider
     yield
     ai_structuring_service.set_provider(original)
+
+
+def test_groq_provider_uses_configured_openai_compatible_endpoint(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    monkeypatch.setenv("GROQ_MODEL", "test-groq-model")
+    monkeypatch.setenv("GROQ_BASE_URL", "https://example.test/openai/v1/")
+
+    provider = GroqAIProvider()
+
+    assert provider.api_key == "test-groq-key"
+    assert provider.model == "test-groq-model"
+    assert provider.url == "https://example.test/openai/v1/chat/completions"
+
+
+def test_groq_provider_posts_json_request_and_parses_response(monkeypatch):
+    captured = {}
+
+    def groq_handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "clean_text": "Groq structured this lecture.",
+                                    "topic": "Groq integration",
+                                    "key_points": ["Use the configured model"],
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    monkeypatch.setenv("GROQ_MODEL", "test-groq-model")
+    monkeypatch.setenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(groq_handler), **kwargs),
+    )
+
+    result = asyncio.run(GroqAIProvider().structure_transcript("Today we test Groq."))
+
+    assert result["topic"] == "Groq integration"
+    assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    assert captured["authorization"] == "Bearer test-groq-key"
+    assert captured["payload"]["model"] == "test-groq-model"
+    assert captured["payload"]["response_format"] == {"type": "json_object"}
+    assert captured["payload"]["temperature"] > 0
+
+
+def test_ai_provider_selection_supports_groq_and_safe_local_fallback(monkeypatch):
+    for name in ("AI_PROVIDER", "GROQ_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+    monkeypatch.setenv("AI_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    assert isinstance(AIStructuringService()._provider, GroqAIProvider)
+
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    assert isinstance(AIStructuringService()._provider, HeuristicAIProvider)
 
 
 # 1. Successful lecture-grounded Q&A

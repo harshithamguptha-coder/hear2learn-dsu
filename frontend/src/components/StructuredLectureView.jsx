@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { askLectureQuestion } from '../api/client'
+import { getAiFeatureError } from '../services/aiErrors'
 
 const QUICK_SUGGESTIONS = [
   'Explain that simply',
@@ -72,7 +73,7 @@ export default function StructuredLectureView({
       setMessages((prev) => [...prev, assistantMsg])
       setQaResult(res)
     } catch (err) {
-      setQaError(err.message || 'Unable to answer this question right now.')
+      setQaError(getAiFeatureError(err, 'The Lecture Assistant'))
     } finally {
       setQaLoading(false)
     }
@@ -164,7 +165,8 @@ export default function StructuredLectureView({
       </header>
 
       {error && (
-        <div className="structured-banner warning" role="alert">
+        <div className="structured-banner fallback" role="status">
+          <span aria-hidden="true">ⓘ</span>
           <span>{error}</span>
         </div>
       )}
@@ -376,7 +378,7 @@ export default function StructuredLectureView({
       )}
 
       {/* Lecture-Grounded AI Assistant (Multi-turn) */}
-      <article className="structured-section qa-section" aria-labelledby="qa-title">
+      <article id="lecture-assistant" className="structured-section qa-section" aria-labelledby="qa-title">
         <div className="qa-section-header">
           <div>
             <div className="qa-title-row">

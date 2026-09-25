@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const RECOGNITION_ERRORS = {
   'audio-capture': 'No speech-recognition microphone was found.',
   'not-allowed': 'Speech recognition is not allowed. Check the browser microphone permission.',
-  'network': 'Speech recognition lost its network connection.',
+  'network': 'Speech recognition is temporarily reconnecting.',
   'service-not-allowed': 'The browser blocked the speech-recognition service.',
   'language-not-supported': 'The browser does not support the selected speech language.',
 }
@@ -37,8 +37,10 @@ export function useSpeechRecognition(onFinalText) {
   const callbackRef = useRef(onFinalText)
   const shouldListenRef = useRef(false)
   const restartTimerRef = useRef(null)
+  const reconnectAttemptsRef = useRef(0)
   const requestIdRef = useRef(0)
   const [isListening, setIsListening] = useState(false)
+  const [isReconnecting, setIsReconnecting] = useState(false)
   const [isRequesting, setIsRequesting] = useState(false)
   const [microphoneOn, setMicrophoneOn] = useState(false)
   const [interimText, setInterimText] = useState('')
@@ -80,11 +82,13 @@ export function useSpeechRecognition(onFinalText) {
 
     setInterimText('')
     setIsRequesting(false)
+    setIsReconnecting(false)
+    reconnectAttemptsRef.current = 0
     releaseMicrophone()
   }, [releaseMicrophone])
 
   const startListening = useCallback(async () => {
-    if (isRequesting || microphoneOn) return
+    if (isRequesting || microphoneOn || shouldListenRef.current || recognitionRef.current) return
 
     if (!supported) {
       setError(supportError)
@@ -96,6 +100,8 @@ export function useSpeechRecognition(onFinalText) {
     requestIdRef.current = requestId
     shouldListenRef.current = true
     setError('')
+    setIsReconnecting(false)
+    reconnectAttemptsRef.current = 0
     setIsRequesting(true)
 
     try {
@@ -114,8 +120,38 @@ export function useSpeechRecognition(onFinalText) {
       recognition.lang = 'en-US'
       recognitionRef.current = recognition
 
+      const failRecognition = (message) => {
+        shouldListenRef.current = false
+        requestIdRef.current += 1
+        window.clearTimeout(restartTimerRef.current)
+        recognitionRef.current = null
+        releaseMicrophone()
+        setIsReconnecting(false)
+        setError(message)
+      }
+
+      const scheduleRecognitionRestart = () => {
+        window.clearTimeout(restartTimerRef.current)
+        if (recognitionRef.current !== recognition || !shouldListenRef.current || !mediaStreamRef.current) return
+        setIsReconnecting(true)
+        restartTimerRef.current = window.setTimeout(() => {
+          if (recognitionRef.current !== recognition || !shouldListenRef.current || !mediaStreamRef.current) return
+          try {
+            recognition.start()
+          } catch {
+            reconnectAttemptsRef.current += 1
+            if (reconnectAttemptsRef.current > 4) {
+              failRecognition('Speech recognition could not reconnect. You can continue using manual speech input.')
+              return
+            }
+            scheduleRecognitionRestart()
+          }
+        }, 500)
+      }
+
       recognition.onstart = () => {
         setError('')
+        setIsReconnecting(false)
         setIsListening(true)
       }
 
@@ -133,17 +169,35 @@ export function useSpeechRecognition(onFinalText) {
 
         setInterimText(interimParts.join(' '))
         const finalText = finalParts.join(' ')
-        if (finalText) callbackRef.current(finalText)
+        if (finalText) {
+          reconnectAttemptsRef.current = 0
+          setIsReconnecting(false)
+          callbackRef.current(finalText)
+        }
       }
 
       recognition.onerror = (event) => {
         if (event.error === 'aborted' || event.error === 'no-speech') return
+
+        if (event.error === 'network' && shouldListenRef.current && mediaStreamRef.current) {
+          setError('')
+          setIsReconnecting(true)
+          reconnectAttemptsRef.current += 1
+          if (reconnectAttemptsRef.current > 4) {
+            failRecognition('Speech recognition could not reconnect. You can continue using manual speech input.')
+            return
+          }
+          scheduleRecognitionRestart()
+          try { recognition.stop() } catch { /* the shared restart remains scheduled */ }
+          return
+        }
 
         shouldListenRef.current = false
         requestIdRef.current += 1
         window.clearTimeout(restartTimerRef.current)
         recognitionRef.current = null
         releaseMicrophone()
+        setIsReconnecting(false)
         setError(RECOGNITION_ERRORS[event.error] || 'Speech recognition stopped unexpectedly.')
       }
 
@@ -152,18 +206,7 @@ export function useSpeechRecognition(onFinalText) {
         setInterimText('')
         if (recognitionRef.current !== recognition) return
         if (!shouldListenRef.current || !mediaStreamRef.current) return
-
-        restartTimerRef.current = window.setTimeout(() => {
-          if (!shouldListenRef.current || !mediaStreamRef.current) return
-          try {
-            recognition.start()
-          } catch {
-            shouldListenRef.current = false
-            recognitionRef.current = null
-            releaseMicrophone()
-            setError('Speech recognition could not restart. Please enable it again.')
-          }
-        }, 300)
+        scheduleRecognitionRestart()
       }
 
       recognition.start()
@@ -205,6 +248,7 @@ export function useSpeechRecognition(onFinalText) {
     isListening,
     listening: isListening || microphoneOn,
     isRequesting,
+    isReconnecting,
     microphoneOn,
     interimText,
     error,
