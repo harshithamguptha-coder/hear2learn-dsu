@@ -1,90 +1,71 @@
-# Accessible Classroom — MVP foundation
+# Accessible Classroom
 
-A small classroom app with a teacher lecture flow, a student join flow, a
-live transcript backed by SQLite, optional Kannada/Hindi/Telugu translation,
-fixed-phrase sign representation, automatic session-scoped lecture notes,
-per-Student accessibility modes, and real Teacher lecture analytics.
+Accessible Classroom is a real-time, role-based AI education platform for Teachers and Students. A Teacher creates a lecture, speaks naturally, and shares a session ID. Students join the same lecture and receive live captions without refreshing the page. Each Student can personalize the learning view with Simplified, Translation, or Sign Support content.
 
-## What works
+This repository contains a functional end-to-end MVP: real accounts, persisted lecture data, browser speech recognition, SQLite storage, Server-Sent Events (SSE), accessibility preferences, attendance history, lecture notes, and Teacher analytics.
 
-- Persistent Teacher and Student accounts are stored in SQLite with scrypt-hashed passwords.
-- Teachers and students register, log in, and are redirected to role-specific dashboards.
-- Authenticated Teacher lectures store their title, Teacher owner, and start/end times in the existing session record.
-- A teacher can create a lecture with a unique session ID and end it.
-- A student can validate and join that ID after logging in.
-- The teacher can turn on browser microphone capture.
-- The Web Speech API converts speech to text through the browser.
-- Finalized text is sent to FastAPI, saved in SQLite, and broadcast with SSE.
-- Students receive the saved transcript first and then live additions.
-- After joining, each Student can save a Standard, Simplified, Translation, or Sign Support view for that lecture. The setting is keyed by that Student and lecture, so classmates can use different modes in the same session.
-- Each Teacher dashboard shows only that Teacher's persisted lectures, attendance, questions, detected topics, and saved Student accessibility modes.
-- Students can request optional Kannada, Hindi, or Telugu translations per segment.
-- Fixed classroom phrases can show local animated sign representations, with the original static SVG as a fallback.
-- Ending a lecture generates notes from only that session's transcript.
-- The original English remains visible if translation is unavailable.
-- Reconnecting students receive the SQLite-backed transcript again.
-- A session ID is a 64-bit random hexadecimal string. A database primary key
-  prevents duplicates, and creation retries if a collision ever occurs.
+## Product capabilities
 
-## Project structure
+### Teacher workspace
 
-```text
-backend/
-  app/
-    auth_api.py              # Register, login, and role protection
-    api.py                  # Lecture, transcript, and SSE routes
-    attendance_api.py       # Student join/leave and My Lectures routes
-    accessibility_api.py    # Student-only per-session mode settings
-    teacher_analytics_api.py # Teacher-only dashboard analytics
-    translation_api.py      # Session-scoped translation endpoint
-    notes_api.py            # Session-scoped lecture notes endpoint
-    database.py             # SQLite connection and schema
-    models.py               # Request/response schemas
-    services/
-      attendance_service.py # Student attendance and personal history queries
-      accessibility_service.py # Per-Student lecture preference persistence
-      teacher_analytics_service.py # Real Teacher lecture aggregates
-      auth_service.py      # Password hashing, users, and signed bearer tokens
-      session_service.py   # Session and transcript storage
-      notes_service.py     # Deterministic extractive notes generation
-      translation_service.py # Replaceable external translation provider
-      realtime.py           # In-memory live event queues
-  tests/                    # API and SSE tests
-frontend/
-  public/signs/         # Local animated phrase assets and static fallbacks
-  src/
-    api/                  # Small API client
-    components/           # Shared transcript, translation, and sign UI
-    services/             # Sign, simplified wording, and lecture-history helpers
-    hooks/                # Speech recognition and SSE hooks
-    pages/                # Teacher and student pages
-```
+- Register and log in with the `teacher` role.
+- Create a lecture with a title and optional subject/topic.
+- Receive a unique uppercase hexadecimal `session_id`.
+- Enable the browser microphone and see interim and finalized speech.
+- See one real-time **LIVE CAPTIONS** section with previous segments and newest speech.
+- Copy the session ID for Students.
+- End a lecture and persist its `ENDED` status.
+- Browse only the logged-in Teacher’s stored lectures.
+- Open one selected lecture by its own `session_id`; its transcript, attendance, questions, topics, accessibility usage, and notes are not mixed with another lecture.
+- View real lecture duration, attendance, question, topic, and accessibility aggregates.
 
-## Run the backend
+### Student workspace
 
-Install **Python 3.10 or newer**, open PowerShell, and run:
+- Register and log in with the `student` role.
+- Join an active lecture using its `session_id`.
+- Receive the saved transcript snapshot first, then live transcript events.
+- See one clear **LIVE CAPTIONS** section that automatically scrolls to the newest saved caption.
+- Select a saved per-Student, per-session mode: `Standard`, `Simplified`, `Translation`, or `Sign Support`.
+- Choose Kannada, Hindi, or Telugu when Translation mode is selected.
+- Keep the original English transcript available when translation is unavailable.
+- Use local fixed-phrase sign representations for supported classroom phrases.
+- View AI concepts, technical terms, numbers, formulas, and Lecture Assistant responses grounded to the current lecture.
+- Keep attendance and completed lectures in **My Lectures** after logout/login.
 
-```powershell
-cd C:\Users\Harshitha\OneDrive\Desktop\dsu\backend
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
+### System behavior
 
-The API is available at **http://127.0.0.1:8000** and interactive API docs at
-**http://127.0.0.1:8000/docs**.
+- Only finalized speech is persisted. Interim Teacher speech is displayed locally but is not saved.
+- Temporary browser SpeechRecognition interruptions are non-fatal and trigger guarded reconnection.
+- Manual speech input remains available if microphone recognition cannot continue.
+- Previous lectures never appear as `LIVE` after their stored session status becomes `ended`.
+- Transcript, notes, conversation, attendance, and accessibility records are scoped by `session_id`.
+- The optional AI layer is not required for captions, attendance, preferences, history, or stored notes.
 
-## Groq AI setup
+> The old Student **“Classroom tools” placard/card section** has been removed from the current UI. Students access the underlying features through **Personalize your view** and the selected-content sections. The Simplified, Translation, Sign Support, AI intelligence, Lecture Assistant, and Lecture Notes functionality remains available.
 
-The backend is already configured to use Groq for AI lesson insights and the
-Lecture Assistant through Groq's OpenAI-compatible API. The local, Git-ignored
-configuration file is:
+## Models and providers
 
-```text
-C:\Users\Harshitha\OneDrive\Desktop\dsu\backend\.env
-```
+| Capability | Provider/model | Role |
+|---|---|---|
+| Speech-to-text | Browser `SpeechRecognition` / `webkitSpeechRecognition` | Converts microphone speech in Chrome/Edge. Raw audio is not uploaded to this project’s backend. |
+| AI lesson structure | Groq `openai/gpt-oss-20b` by default | Produces clean text, topics, key points, concepts, technical terms, numbers, formulas, definitions, examples, and review moments. |
+| Lecture-grounded Q&A | Groq `openai/gpt-oss-20b` by default | Answers using the current session transcript and recent conversation history. |
+| Local AI fallback | `HeuristicAIProvider` | Deterministic offline rule-based structuring and Q&A; it is not an LLM. |
+| Translation | MyMemory HTTP API | Translates individual English segments to `kn`, `hi`, or `te`; it is not the Groq model. |
+| Lecture notes | Python `NotesService` | Deterministic extractive notes from the current transcript; no LLM call. |
+| Sign Support | Local fixed-phrase registry and SVG assets | Provides illustrative animations for a small set of supported phrases; it is not unrestricted sign-language translation. |
 
-Open it in Notepad and paste the key after `GROQ_API_KEY=`:
+### Configurable AI providers
+
+The backend supports these `AI_PROVIDER` values:
+
+- `groq` — Groq’s OpenAI-compatible API.
+- `openai` — OpenAI Chat Completions.
+- `gemini` — Google Gemini `generateContent` API.
+- `heuristic`, `local`, or `none` — deterministic local fallback.
+- `auto` — select an available external provider, otherwise use the heuristic provider.
+
+The default local configuration is:
 
 ```dotenv
 AI_PROVIDER=groq
@@ -93,27 +74,90 @@ GROQ_MODEL=openai/gpt-oss-20b
 GROQ_BASE_URL=https://api.groq.com/openai/v1
 ```
 
-Do not add quotes around the key and do not commit `.env`. The safe template is
-`backend/.env.example`. After saving the key, install the updated dependency and
-verify the key without printing it:
+Groq requests use:
+
+```text
+POST https://api.groq.com/openai/v1/chat/completions
+Authorization: Bearer <GROQ_API_KEY>
+response_format: {"type": "json_object"}
+```
+
+The model is configurable with `GROQ_MODEL`. The API key is read from `backend/.env`; it is never stored in SQLite or committed to Git.
+
+
+## Quick start
+
+### Prerequisites
+
+- Python 3.10 or newer
+- Node.js 20 or newer
+- Chrome or Edge for browser microphone recognition
+- Internet access for browser speech recognition, Groq (when enabled), and MyMemory translation
+- A working microphone for the live SpeechRecognition demo
+
+### Clone the repository
+
+```powershell
+cd C:\Users\Harshitha
+git clone https://github.com/harshithamguptha-coder/hear2learn-dsu.git
+cd hear2learn-dsu
+```
+
+If the project is already downloaded, use:
+
+```text
+C:\Users\Harshitha\OneDrive\Desktop\dsu
+```
+
+### Start the backend
+
+Open PowerShell window 1:
 
 ```powershell
 cd C:\Users\Harshitha\OneDrive\Desktop\dsu\backend
+py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Create the local environment file if needed:
+
+```powershell
+if (!(Test-Path .env)) {
+    Copy-Item .env.example .env
+}
+notepad .env
+```
+
+Paste the Groq key after `GROQ_API_KEY=`. Do not add quotes and do not commit `.env`.
+
+Optionally set a stable development authentication secret:
+
+```powershell
+$env:AUTH_SECRET = "replace-this-with-a-long-random-secret"
+```
+
+Verify Groq without printing the key:
+
+```powershell
 .\.venv\Scripts\python.exe verify_groq.py
 ```
 
-Then restart Uvicorn. The provider is selected once at backend startup, so a
-restart is required after pasting or changing the key. If `GROQ_API_KEY` is
-blank, the app safely uses its existing local heuristic provider. Groq powers
-optional transcript structuring and Lecture Assistant Q&A; browser speech
-recognition, captions, translation, attendance, and stored lecture data are
-unchanged.
+Start FastAPI:
 
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
 
-## Run the frontend
+Check:
 
-Install **Node.js 20 or newer**, open a second PowerShell, and run:
+```text
+http://127.0.0.1:8000/api/health
+http://127.0.0.1:8000/docs
+```
+
+### Start the frontend
+
+Open PowerShell window 2:
 
 ```powershell
 cd C:\Users\Harshitha\OneDrive\Desktop\dsu\frontend
@@ -121,130 +165,349 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** in a current Chrome or Edge browser. Register or
-log in first, then visit `/teacher` or `/student`. Teachers can start a lecture;
-Students can join using the displayed session ID.
+Open:
 
-The Vite development server proxies `/api` to the backend, so the two processes
-work on their default ports without extra configuration.
-
-## Test and build
-
-From `C:\Users\Harshitha\OneDrive\Desktop\dsu\backend`:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+```text
+http://localhost:5173
 ```
 
-From `C:\Users\Harshitha\OneDrive\Desktop\dsu\frontend`:
+Use `localhost` consistently. Vite proxies `/api` requests to `http://127.0.0.1:8000`.
 
-```powershell
-npm test
-npm run build
+## Recommended judge demo
+
+Use a normal browser profile for the Teacher and an Incognito/separate profile for the Student. Separate profiles are recommended because the login token is stored in browser `localStorage`.
+
+### 1. Create accounts
+
+Open:
+
+```text
+http://localhost:5173/register?role=teacher
+http://localhost:5173/register?role=student
 ```
 
-## Speech recognition notes
+Example credentials:
 
-The MVP uses the browser's Web Speech API rather than uploading raw audio to
-a speech model. Chromium normally performs recognition through a browser speech
-service, so an internet connection and microphone permission are required. STT
-support varies by browser and is not guaranteed on every device. `localhost` is
-treated as a secure context by modern browsers; a hosted copy must use HTTPS.
-
-Only finalized words are persisted. Temporary/interim words are shown to the
-teacher but are not sent to the API. In-memory SSE queues notify open pages;
-SQLite is the durable source of truth and is restored into each new stream.
-
-## Translation notes
-
-The MVP uses MyMemory's no-key HTTP translation API through a replaceable
-`TranslationService`. Kannada, Hindi, and Telugu requests are made only when a
-student selects that language, so English remains the default and no provider
-calls are made for the Teacher page. The public translation provider requires
-an internet connection and has usage/rate limits. Translation is not stored in
-SQLite; the English transcript remains the durable source and can be translated
-again later.
-
-## Sign representation notes
-
-The Student transcript checks each finalized English segment against the fixed
-MVP registry in `frontend/src/services/signLanguage.js`. Only these phrases are
-supported: "Good morning", "Open your book", "Pay attention", "Any questions?",
-and "Thank you". A match shows a short local animated SVG representation with
-play/pause/replay controls; the original static SVG remains a fallback. These are
-illustrative fixed-phrase animations, not unrestricted sentence-to-sign
-translation. Unsupported or longer sentences are not represented.
-The current `session_id` scopes the Student rendering; no new session or API is
-created.
-
-## Automatic lecture notes
-
-The project has no existing LLM configuration, so the MVP uses a small
-standard-library extractive notes service rather than adding a model dependency.
-On the first End Lecture request, it reads transcripts using only the current
-`session_id` and stores one notes row for that session. Notes include a title,
-short summary, main topics, key points, and important terms. Transcripts below
-20 words return a clear "more speech needed" state. Students already connected
-receive a session-ended SSE event and load the notes without refreshing, while
-the full translated and signed transcript remains below the notes card.
-
-## Student lecture history
-
-The Student dashboard keeps a personal attendance record in SQLite. Joining an
-active lecture stores `student_id`, `session_id`, and `joined_at`; leaving or
-ending the lecture fills `left_at`. The **My Lectures** card shows only the
-logged-in Student's own lecture title, date, attendance duration, Teacher, and
-status. Lecture identifiers remain the existing `session_id` values.
-
-## Teacher dashboard analytics
-
-The authenticated Teacher dashboard aggregates only that Teacher's existing
-`session_id` records. Lecture totals and recent lectures come from `sessions`;
-student counts come from `lecture_attendance`; question counts come from stored
-`user` messages in `conversation_messages`; topics come from the completed
-lecture's stored `lecture_notes.main_topics`; and accessibility usage comes from
-the four saved modes in `student_accessibility_preferences`. Missing values are
-returned as zero or an empty list and rendered as `0`, `0m`, or `No data`.
-
-## Authentication notes
-
-Accounts are stored in the default SQLite database at `backend/classroom.db`.
-Passwords are hashed with Python's built-in `scrypt`; plaintext passwords are
-never stored or returned. Login tokens are short-lived bearer tokens kept in
-browser `localStorage`. For a stable login session across backend restarts,
-set an environment variable before starting Uvicorn:
-
-```powershell
-$env:AUTH_SECRET = "replace-this-with-a-long-random-secret"
+```text
+Teacher: teacher@example.com / StrongPass123!
+Student: student@example.com / StrongPass123!
 ```
 
-If `AUTH_SECRET` is not set, the development server generates a new secret at
-startup, so existing login tokens are invalidated when the backend restarts.
+### 2. Teacher starts a lecture
 
-## Data location
+1. Log in as the Teacher.
+2. Open **Start New Lecture** from the sidebar.
+3. Enter `Operating Systems` as the title and `Computer Science` as the optional topic.
+4. Click **Start Lecture**.
+5. Show the generated session ID.
+6. Click **Enable microphone** and allow permission.
+7. Say:
 
-The default database is `backend/classroom.db`. To use another path, set
-`DATABASE_PATH` before starting Uvicorn. Delete the `.db` file to reset all
-local lecture and transcript data.
+```text
+Good morning. Today we are learning operating systems.
+A process is a program that is currently running.
+```
+
+The Teacher sees interim speech immediately and finalized captions saved in the database. If microphone recognition is unavailable, use **Manual speech input**; it uses the same real transcript endpoint and SSE flow.
+
+### 3. Student joins
+
+1. In the Student profile, click **Join New Lecture**.
+2. Paste the session ID.
+3. Click **Join Lecture**.
+4. Speak another sentence from the Teacher window:
+
+```text
+The operating system manages CPU, memory, and input devices.
+```
+
+The Student receives the same saved transcript through SSE without a refresh.
+
+### 4. Show accessibility personalization
+
+Use the **Personalize your view** dropdown:
+
+- `Simplified` shows easier-language learning support.
+- `Translation` shows Kannada, Hindi, or Telugu selection.
+- `Sign Support` shows supported local phrase animations.
+
+Each Student’s mode is stored using both `student_id` and `session_id`, so two classmates can choose different modes in the same lecture.
+
+### 5. Show AI Classroom Intelligence
+
+After enough transcript exists, show Groq-generated concepts, technical information, numbers, formulas, and Lecture Assistant Q&A.
+
+Ask:
+
+```text
+What is a process?
+```
+
+The assistant is instructed to use only the current lecture transcript. If Groq is unavailable, the UI shows a small non-blocking fallback and the core classroom continues working.
+
+### 6. End and verify persistence
+
+1. Teacher clicks **End lecture**.
+2. Teacher and Student views change to `ENDED`.
+3. The saved transcript remains visible.
+4. Teacher opens **Recent Lectures** and selects that lecture.
+5. Student opens **My Lectures**, logs out, logs back in, and confirms the lecture remains.
+
+
+## Architecture
+
+### Live captions
+
+```text
+Teacher microphone
+        ↓
+Browser Web Speech API
+        ↓
+Finalized text
+        ↓
+POST /api/sessions/{session_id}/transcript
+        ↓
+SQLite transcript row
+        ↓
+EventHub publishes transcript event
+        ↓
+GET /api/sessions/{session_id}/events (SSE)
+        ↓
+Student TranscriptView
+```
+
+- The Teacher and Student each render one `TranscriptView`; there is no duplicate caption UI.
+- New transcript rows have unique database IDs and are merged/sorted in the frontend.
+- A Student receives a saved transcript snapshot before live events.
+- SSE sends a reconnect hint, session-ended events, and periodic keep-alive comments.
+- The browser’s `EventSource` reconnects automatically; a reconnecting Student can receive the SQLite snapshot again.
+- SpeechRecognition uses one guarded recognition instance per Teacher page and one shared restart timer.
+- The lecture is not ended because of a temporary speech network interruption.
+
+### AI path
+
+```text
+Saved transcript for one session
+        ↓
+Groq OpenAI-compatible /chat/completions endpoint
+        ↓
+Structured concepts/terms/numbers/formulas
+        ↓
+Lecture-grounded Q&A and multi-turn conversation
+```
+
+### Accessibility path
+
+```text
+Student selects a mode
+        ↓
+Preference saved by (student_id, session_id)
+        ↓
+Simplified local view / MyMemory translation / local sign registry
+```
+
+## Data and session isolation
+
+SQLite is the durable source of truth. Important tables are:
+
+- `users` — accounts and roles.
+- `sessions` — lecture/session ID, title, Teacher owner, status, and timestamps.
+- `transcripts` — finalized transcript segments associated with one `session_id`.
+- `lecture_notes` — one generated notes record per session.
+- `lecture_attendance` — Student/session join and leave records.
+- `student_accessibility_preferences` — one mode/language preference per Student/session pair.
+- `conversations` and `conversation_messages` — session-scoped Lecture Assistant conversations.
+
+Primary isolation rules:
+
+- Teacher dashboards query `WHERE session.teacher_id = ?`.
+- Student history queries `WHERE attendance.student_id = ?`.
+- Accessibility preferences use the composite key `(student_id, session_id)`.
+- Transcripts, notes, and conversations always use the selected `session_id`.
+- A conversation ID from Lecture A cannot be used with Lecture B.
+- A selected lecture detail never combines Lecture A and Lecture B data.
 
 ## API summary
 
 | Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/health` | Check backend health |
-| `POST` | `/api/auth/register` | Create a persistent Teacher or Student account |
-| `POST` | `/api/auth/login` | Log in and receive a bearer token |
-| `GET` | `/api/auth/me` | Read the logged-in account |
+|---|---|---|
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/auth/register` | Create a Teacher or Student account |
+| `POST` | `/api/auth/login` | Authenticate and return a bearer token |
+| `GET` | `/api/auth/me` | Read the current account |
 | `POST` | `/api/lectures` | Create a Teacher-owned lecture |
-| `POST` | `/api/sessions` | Start a backward-compatible foundation lecture |
-| `GET` | `/api/sessions/{session_id}` | Validate/join a lecture |
-| `POST` | `/api/sessions/{session_id}/end` | End a lecture |
-| `POST` | `/api/sessions/{session_id}/attendance/join` | Record the logged-in Student's join |
-| `POST` | `/api/sessions/{session_id}/attendance/leave` | Record the Student's leave |
-| `GET` | `/api/my-lectures` | List only the logged-in Student's attended lectures |
-| `GET` | `/api/sessions/{session_id}/transcript` | Read saved transcript |
-| `POST` | `/api/sessions/{session_id}/transcript` | Save finalized text |
-| `GET` | `/api/sessions/{session_id}/events` | Subscribe to live SSE events |
+| `POST` | `/api/sessions` | Backward-compatible foundation session creation |
+| `GET` | `/api/sessions/{session_id}` | Validate/read a session |
+| `POST` | `/api/sessions/{session_id}/end` | End a session and generate notes |
+| `GET` | `/api/sessions/{session_id}/transcript` | Read saved transcript segments |
+| `POST` | `/api/sessions/{session_id}/transcript` | Save finalized transcript text |
+| `GET` | `/api/sessions/{session_id}/events` | Subscribe to transcript and ended events via SSE |
+| `POST` | `/api/sessions/{session_id}/structure` | Structure the current transcript with the selected AI provider |
+| `POST` | `/api/sessions/{session_id}/qa` | Answer a session-grounded question |
+| `POST` | `/api/sessions/{session_id}/conversations` | Create a session-scoped conversation |
+| `GET` | `/api/sessions/{session_id}/conversations/{conversation_id}` | Read a session-scoped conversation |
 | `POST` | `/api/sessions/{session_id}/translations` | Translate one English segment |
-| `GET` | `/api/sessions/{session_id}/notes` | Get notes for one ended session |
-| `GET` | `/api/teacher/dashboard` | Read analytics for the logged-in Teacher's own lectures |
+| `GET` | `/api/sessions/{session_id}/notes` | Read notes for one ended session |
+| `POST` | `/api/sessions/{session_id}/attendance/join` | Record Student attendance |
+| `POST` | `/api/sessions/{session_id}/attendance/leave` | Record Student leave |
+| `GET` | `/api/my-lectures` | List only the logged-in Student’s lectures |
+| `GET` | `/api/sessions/{session_id}/accessibility` | Read the Student’s saved mode for one session |
+| `POST` | `/api/sessions/{session_id}/accessibility` | Save the Student’s mode for one session |
+| `GET` | `/api/teacher/dashboard` | Return the logged-in Teacher’s aggregates |
+
+## Authentication and security
+
+- Passwords are hashed with Python’s built-in `scrypt` using a random salt.
+- Passwords are never returned by the API or stored in plaintext.
+- Login responses contain a signed bearer token.
+- Tokens contain a user ID, role, and expiration and use HMAC-SHA256 signatures.
+- Tokens expire after eight hours.
+- The frontend stores the token in `localStorage` for this local MVP.
+- `.env` is ignored by Git; `.env.example` contains no real secret.
+- CORS is configured for the local Vite origins.
+- Teacher-only routes use `require_teacher`; Student attendance/accessibility/history routes use `require_student`.
+
+### MVP security limitations
+
+This is a local hackathon MVP, not a production security review. Before production deployment, add refresh-token rotation, stricter token storage, CSRF protection where relevant, rate limiting, secret management, HTTPS, audit logging, and authorization checks on every session-scoped route. Some legacy session/transcript foundation endpoints remain intentionally backward-compatible and are not all protected in the MVP.
+
+## Translation, notes, and sign support
+
+### Translation
+
+`TranslationService` calls MyMemory’s no-key HTTP API for Kannada, Hindi, and Telugu. It chunks long text, validates script ranges, applies a small set of known classroom fallbacks, and caches up to 500 translations. Translations are not stored in SQLite; the English transcript remains the durable source and can be translated again.
+
+### Lecture notes
+
+`NotesService` is deterministic and standard-library based. It reads only the selected session transcript, ranks repeated meaningful terms and sentences, and stores one notes row per session. A transcript below 20 words produces a clear “more speech needed” state. Notes are not generated by Groq.
+
+### Sign Support
+
+The frontend uses a fixed local phrase registry and local animated/static SVG assets. The current MVP phrases are:
+
+- `Good morning`
+- `Open your book`
+- `Pay attention`
+- `Any questions?`
+- `Thank you`
+
+Unsupported or unrestricted sentences are not represented as sign translations. The original transcript always remains visible.
+
+## Accessibility design
+
+- Semantic headings, labels, landmarks, and status regions.
+- Keyboard-visible focus states.
+- Text labels in addition to icons and color.
+- Strong contrast and readable font sizes.
+- `aria-live` transcript updates and explicit LIVE/ENDED labels.
+- Reduced-motion support.
+- Responsive layouts and mobile sidebar behavior.
+- Original English remains available alongside translated content.
+- Sign Support is explicitly documented as fixed-phrase support, not unrestricted translation.
+
+## Testing and validation
+
+Backend:
+
+```powershell
+cd C:\Users\Harshitha\OneDrive\Desktop\dsu\backend
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Frontend:
+
+```powershell
+cd C:\Users\Harshitha\OneDrive\Desktop\dsu\frontend
+npm test
+npm run build
+```
+
+The current validation completed successfully with:
+
+- Backend: **71 tests passed**
+- Frontend: **12 tests passed**
+- Frontend production build: **passed**
+- Groq model/key verification: **passed**
+- Real Groq structured-inference smoke test: **passed**
+- `git diff --check`: **passed**
+
+The test suite forces the deterministic local provider where appropriate, so automated tests do not spend the real Groq quota.
+
+## Troubleshooting
+
+### `cd hear2learn-dsu\backend` fails
+
+Use the actual checkout path:
+
+```powershell
+cd C:\Users\Harshitha\OneDrive\Desktop\dsu\backend
+```
+
+### `No module named uvicorn`
+
+```powershell
+cd C:\Users\Harshitha\OneDrive\Desktop\dsu\backend
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### Backend is not responding
+
+Check:
+
+```text
+http://127.0.0.1:8000/api/health
+```
+
+Make sure PowerShell window 1 is still running Uvicorn.
+
+### Port already in use
+
+```powershell
+Get-NetTCPConnection -State Listen | Where-Object {
+    $_.LocalPort -in 8000,5173
+}
+```
+
+Use the already-running process or stop the old process before restarting.
+
+### Microphone does not work
+
+- Use current Chrome or Edge.
+- Open `http://localhost:5173`, not a raw LAN IP.
+- Allow microphone permission.
+- Check that the microphone is not muted or used by another application.
+- Use **Manual speech input** as a deterministic fallback; it still uses the real transcript/SSE backend path.
+
+### Groq is unavailable
+
+```powershell
+cd C:\Users\Harshitha\OneDrive\Desktop\dsu\backend
+.\.venv\Scripts\python.exe verify_groq.py
+```
+
+If the key is blank, the service falls back locally. Restart Uvicorn after changing `.env`.
+
+### Translation is unavailable
+
+Translation needs internet access and may be rate-limited by MyMemory. The original English transcript remains visible.
+
+## Design decisions and honest limitations
+
+- **SQLite** keeps setup simple and provides durable local persistence; production would likely use PostgreSQL.
+- **SSE** is appropriate for one-way Teacher-to-Student updates; bidirectional collaboration would use WebSockets.
+- **In-memory EventHub** is simple and session-scoped but process-local. Multiple server replicas would need Redis, NATS, or another shared event bus.
+- **Browser Web Speech API** avoids storing raw audio, but recognition quality depends on browser, network, microphone, and browser speech service.
+- **Groq** accelerates JSON generation and Q&A, but external AI calls have latency, quota, and availability considerations.
+- **Prompt grounding** reduces hallucination by supplying only the current transcript and enforcing a response contract; it is not a mathematical guarantee that an external model can never err.
+- **Sign Support** is a fixed educational prototype, not a complete sign-language translator.
+- **Translation** is optional and external; English is always the source of truth.
+- **Authentication** is suitable for a local MVP, not a full production identity system.
+- The removed Student “Classroom tools” cards are intentionally not part of the current UI; students use **Personalize your view** and selected content.
+
+## Judge elevator pitch
+
+> Accessible Classroom is a live, accessible education platform. Teachers create a session and speak naturally. Browser speech recognition turns finalized speech into session-scoped captions, FastAPI stores them in SQLite, and SSE delivers them to Students in real time. Students can choose Simplified, Translation, or Sign Support views, with preferences saved independently for each account and lecture. Groq adds grounded lesson insights and a lecture-only Q&A assistant, while deterministic local fallbacks keep the core classroom working when external services fail. Attendance, lecture history, notes, analytics, and transcript data remain isolated by session and user.
+
+## License and repository
+
+This repository is the Accessible Classroom MVP. Add the appropriate license before public distribution if required.
