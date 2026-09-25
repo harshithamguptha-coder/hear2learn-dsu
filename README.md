@@ -1,4 +1,4 @@
-# Accessible Classroom
+# Hear2Learn
 
 Accessible Classroom is a real-time, role-based AI education platform for Teachers and Students. A Teacher creates a lecture, speaks naturally, and shares a session ID. Students join the same lecture and receive live captions without refreshing the page. Each Student can personalize the learning view with Simplified, Translation, or Sign Support content.
 
