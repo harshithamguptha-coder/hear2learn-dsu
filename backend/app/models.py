@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 
 LanguageCode = Literal["en", "kn", "hi", "te"]
+AccessibilityMode = Literal["standard", "simplified", "translation", "sign_support"]
+TranslationLanguage = Literal["kn", "hi", "te"]
 
 
 UserRole = Literal["teacher", "student"]
@@ -153,6 +155,47 @@ class TranslationResponse(BaseModel):
     target_language: LanguageCode
     original_text: str
     translated_text: str
+
+
+class AccessibilityPreferenceUpdate(BaseModel):
+    mode: AccessibilityMode
+    translation_language: TranslationLanguage = "kn"
+
+
+class AccessibilityPreferenceResponse(BaseModel):
+    student_id: int
+    session_id: str
+    mode: AccessibilityMode
+    translation_language: TranslationLanguage
+    created_at: str
+    updated_at: str
+
+
+class AccessibilityUsage(BaseModel):
+    standard: int = Field(default=0, ge=0)
+    simplified: int = Field(default=0, ge=0)
+    translation: int = Field(default=0, ge=0)
+    sign_support: int = Field(default=0, ge=0)
+
+
+class TeacherLectureAnalytics(BaseModel):
+    session_id: str
+    title: str
+    lecture_date: str
+    start_time: str
+    end_time: str | None = None
+    duration_seconds: int = Field(default=0, ge=0)
+    students_attended: int = Field(default=0, ge=0)
+    questions_asked: int = Field(default=0, ge=0)
+    detected_topics: list[str] = Field(default_factory=list)
+    accessibility_usage: AccessibilityUsage
+    status: Literal["active", "ended"]
+
+
+class TeacherDashboardResponse(BaseModel):
+    teacher_id: int
+    total_lectures: int = Field(default=0, ge=0)
+    lectures: list[TeacherLectureAnalytics] = Field(default_factory=list)
 
 
 class LectureNotesResponse(BaseModel):

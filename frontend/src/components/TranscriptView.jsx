@@ -15,6 +15,7 @@ export default function TranscriptView({
   emptyText,
   sessionId = '',
   translationLanguage = 'en',
+  accessibilityMode = 'standard',
 }) {
   return (
     <section className="transcript-panel" aria-labelledby="transcript-title">
@@ -41,12 +42,16 @@ export default function TranscriptView({
               <time dateTime={item.created_at}>{formatTime(item.created_at)}</time>
               <div className="transcript-text">
                 <p lang="en">{item.text}</p>
-                <TranslationLine
-                  sessionId={sessionId}
-                  text={item.text}
-                  language={translationLanguage}
-                />
-                <SignRepresentation sessionId={sessionId} text={item.text} />
+                {accessibilityMode === 'translation' && (
+                  <TranslationLine
+                    sessionId={sessionId}
+                    text={item.text}
+                    language={translationLanguage}
+                  />
+                )}
+                {accessibilityMode === 'sign_support' && (
+                  <SignRepresentation sessionId={sessionId} text={item.text} />
+                )}
               </div>
             </li>
           ))}

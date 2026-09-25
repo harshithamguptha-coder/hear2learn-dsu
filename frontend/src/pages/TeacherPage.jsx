@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createLecture, endSession, saveTranscript } from '../api/client'
+import TeacherDashboard from '../components/TeacherDashboard'
 import { useAuth } from '../context/AuthContext'
 import { useLectureContext } from '../context/LectureContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
@@ -33,6 +34,7 @@ export default function TeacherPage() {
   const [copied, setCopied] = useState(false)
   const [manualText, setManualText] = useState('')
   const [lectureTitle, setLectureTitle] = useState('Untitled Lecture')
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0)
 
   const sessionRef = useRef(session)
   useEffect(() => {
@@ -78,6 +80,7 @@ export default function TeacherPage() {
       setStudentQaResult(null)
       setStudentQuestionInput('')
       setStudentLastStructuredText('')
+      setDashboardRefreshKey((value) => value + 1)
     } catch (error) {
       setActionError(`Could not start the lecture: ${error.message}`)
     } finally {
@@ -94,6 +97,7 @@ export default function TeacherPage() {
       const endedSession = await endSession(session.session_id)
       setSession(endedSession)
       setStudentSession(endedSession)
+      setDashboardRefreshKey((value) => value + 1)
     } catch (error) {
       setActionError(`Could not end the lecture: ${error.message}`)
     } finally {
@@ -123,11 +127,13 @@ export default function TeacherPage() {
       <div className="page-heading">
         <div>
           <p className="eyebrow">Teacher workspace</p>
-          <h1>Start a live lecture</h1>
-          <p>Welcome, {user?.name}. Share your session ID, then turn on the microphone and teach normally.</p>
+          <h1>Teacher dashboard</h1>
+          <p>Welcome, {user?.name}. Review your stored lecture records or start a live classroom.</p>
         </div>
         <span className="page-number" aria-hidden="true">01</span>
       </div>
+
+      <TeacherDashboard token={token} refreshKey={dashboardRefreshKey} />
 
       <section className="control-card" aria-label="Lecture controls">
         <div className="lecture-title-control">

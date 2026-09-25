@@ -2,15 +2,18 @@ import { useAuth } from '../context/AuthContext'
 import { useEffect, useRef, useState } from 'react'
 
 import {
+  getAccessibilityPreference,
   getLectureNotes,
   getMyLectures,
   getSession,
   joinLectureAttendance,
   leaveLectureAttendance,
+  saveAccessibilityPreference,
   structureTranscript,
 } from '../api/client'
 import LectureNotes from '../components/LectureNotes'
 import MyLectures from '../components/MyLectures'
+import SimplifiedLectureContent from '../components/SimplifiedLectureContent'
 import StructuredLectureView from '../components/StructuredLectureView'
 import TranscriptView from '../components/TranscriptView'
 import { useLectureContext } from '../context/LectureContext'
@@ -45,7 +48,12 @@ export default function StudentPage() {
   const [error, setError] = useState('')
   const [joining, setJoining] = useState(false)
   const [structuring, setStructuring] = useState(false)
-  const [translationLanguage, setTranslationLanguage] = useState('en')
+  const [accessibilityMode, setAccessibilityMode] = useState('standard')
+  const [translationLanguage, setTranslationLanguage] = useState('kn')
+  const [preferenceAvailable, setPreferenceAvailable] = useState(false)
+  const [preferenceLoading, setPreferenceLoading] = useState(false)
+  const [preferenceSaving, setPreferenceSaving] = useState(false)
+  const [preferenceError, setPreferenceError] = useState('')
   const [notes, setNotes] = useState(null)
   const [notesLoading, setNotesLoading] = useState(false)
   const [notesError, setNotesError] = useState('')
@@ -61,6 +69,17 @@ export default function StudentPage() {
   )
   const lastStructuredTextRef = useRef(studentLastStructuredText)
   const activeAttendanceSessionRef = useRef('')
+  const preferenceRequestRef = useRef(0)
+
+  function resetAccessibilityPreference() {
+    preferenceRequestRef.current += 1
+    setAccessibilityMode('standard')
+    setTranslationLanguage('kn')
+    setPreferenceAvailable(false)
+    setPreferenceLoading(false)
+    setPreferenceSaving(false)
+    setPreferenceError('')
+  }
 
   async function refreshMyLectures() {
     setMyLecturesLoading(true)
@@ -79,13 +98,87 @@ export default function StudentPage() {
   }, [])
 
   async function recordAttendance(sessionId) {
-    if (!user || user.role !== 'student' || activeAttendanceSessionRef.current === sessionId) return
+    if (!user || user.role !== 'student' || activeAttendanceSessionRef.current === sessionId) {
+      return activeAttendanceSessionRef.current === sessionId
+    }
     try {
-      await joinLectureAttendance(sessionId)
+      await joinLectureAttendance(sessionId, token)
       activeAttendanceSessionRef.current = sessionId
       await refreshMyLectures()
+      return true
     } catch (attendanceError) {
       setError(`Could not record lecture attendance: ${attendanceError.message}`)
+      return false
+    }
+  }
+
+  useEffect(() => {
+    const sessionId = session?.session_id
+    const requestId = ++preferenceRequestRef.current
+    if (!sessionId) {
+      resetAccessibilityPreference()
+      return undefined
+    }
+
+    let cancelled = false
+    setPreferenceLoading(true)
+    setPreferenceAvailable(false)
+    setPreferenceError('')
+    getAccessibilityPreference(sessionId, token)
+      .then((savedPreference) => {
+        if (cancelled || requestId !== preferenceRequestRef.current) return
+        setAccessibilityMode(savedPreference.mode)
+        setTranslationLanguage(savedPreference.translation_language)
+        setPreferenceAvailable(true)
+      })
+      .catch((requestError) => {
+        if (cancelled || requestId !== preferenceRequestRef.current) return
+        setPreferenceAvailable(false)
+        setPreferenceError(
+          `Your saved mode could not be loaded: ${requestError.message}`,
+        )
+      })
+      .finally(() => {
+        if (cancelled || requestId !== preferenceRequestRef.current) return
+        setPreferenceLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [session?.session_id, token])
+
+  async function persistAccessibility(nextMode, nextLanguage = translationLanguage) {
+    const sessionId = session?.session_id
+    if (!sessionId || !preferenceAvailable || preferenceSaving) return
+
+    const previousMode = accessibilityMode
+    const previousLanguage = translationLanguage
+    const requestId = ++preferenceRequestRef.current
+    setAccessibilityMode(nextMode)
+    setTranslationLanguage(nextLanguage)
+    setPreferenceSaving(true)
+    setPreferenceError('')
+
+    try {
+      const savedPreference = await saveAccessibilityPreference(
+        sessionId,
+        nextMode,
+        nextLanguage,
+        token,
+      )
+      if (requestId !== preferenceRequestRef.current) return
+      setAccessibilityMode(savedPreference.mode)
+      setTranslationLanguage(savedPreference.translation_language)
+    } catch (requestError) {
+      if (requestId !== preferenceRequestRef.current) return
+      setAccessibilityMode(previousMode)
+      setTranslationLanguage(previousLanguage)
+      setPreferenceError(
+        `Your mode was not saved. The previous setting is still active: ${requestError.message}`,
+      )
+    } finally {
+      if (requestId === preferenceRequestRef.current) setPreferenceSaving(false)
     }
   }
 
@@ -105,6 +198,7 @@ export default function StudentPage() {
       setNotesError('')
       setStudentLastStructuredText('')
       lastStructuredTextRef.current = ''
+      resetAccessibilityPreference()
       await refreshMyLectures()
     } catch (leaveError) {
       setError(`Could not leave the lecture: ${leaveError.message}`)
@@ -120,10 +214,14 @@ export default function StudentPage() {
 
   // If student is not connected and teacher has an active session, auto-connect for seamless switching
   useEffect(() => {
-    if (!session && teacherSession?.session_id) {
-      setInput(teacherSession.session_id)
-      setSession(teacherSession)
-      recordAttendance(teacherSession.session_id)
+    if (session || !teacherSession?.session_id) return undefined
+    let cancelled = false
+    setInput(teacherSession.session_id)
+    recordAttendance(teacherSession.session_id).then((attendanceSaved) => {
+      if (!cancelled && attendanceSaved) setSession(teacherSession)
+    })
+    return () => {
+      cancelled = true
     }
   }, [session, teacherSession, setInput, setSession])
 
@@ -193,11 +291,13 @@ export default function StudentPage() {
     lastStructuredTextRef.current = ''
     setNotes(null)
     setNotesError('')
+    resetAccessibilityPreference()
 
     try {
       const foundSession = await getSession(sessionId)
       if (foundSession.status === 'active') {
-        await recordAttendance(sessionId)
+        const attendanceSaved = await recordAttendance(sessionId)
+        if (!attendanceSaved) return
       }
       setSession(foundSession)
     } catch (requestError) {
@@ -303,21 +403,6 @@ export default function StudentPage() {
             <p className="eyebrow">You are in</p>
             <h2 id="joined-title">Lecture {session.session_id}</h2>
           </div>
-          <div className="language-control">
-            <label htmlFor="translation-language">Translation language</label>
-            <select
-              id="translation-language"
-              value={translationLanguage}
-              onChange={(event) => setTranslationLanguage(event.target.value)}
-              aria-describedby="translation-help"
-            >
-              <option value="en">English (original)</option>
-              <option value="kn">Kannada</option>
-              <option value="hi">Hindi</option>
-              <option value="te">Telugu</option>
-            </select>
-            <small id="translation-help">The original English always stays visible.</small>
-          </div>
           <span className="connection-state" role="status">
             <span aria-hidden="true" /> {connectionLabel}
           </span>
@@ -336,18 +421,94 @@ export default function StudentPage() {
         </section>
       )}
 
+      {session && (
+        <section className="accessibility-panel" aria-labelledby="accessibility-mode-title">
+          <div className="accessibility-panel-copy">
+            <p className="eyebrow">Your lecture view</p>
+            <h2 id="accessibility-mode-title">Accessibility mode</h2>
+            <p>
+              Choose how this lecture is presented to you. Your choice is saved
+              only for your account in this lecture.
+            </p>
+          </div>
+          <div className="accessibility-controls">
+            <div className="accessibility-mode-control">
+              <label htmlFor="accessibility-mode">Lecture mode</label>
+              <select
+                id="accessibility-mode"
+                value={accessibilityMode}
+                onChange={(event) => persistAccessibility(event.target.value)}
+                disabled={!preferenceAvailable || preferenceLoading || preferenceSaving}
+                aria-describedby="accessibility-mode-help accessibility-save-status"
+              >
+                <option value="standard">Standard</option>
+                <option value="simplified">Simplified</option>
+                <option value="translation">Translation</option>
+                <option value="sign_support">Sign Support</option>
+              </select>
+              <small id="accessibility-mode-help">
+                Other students can use different modes in this same lecture.
+              </small>
+            </div>
+
+            {accessibilityMode === 'translation' && (
+              <div className="language-control">
+                <label htmlFor="translation-language">Translation language</label>
+                <select
+                  id="translation-language"
+                  value={translationLanguage}
+                  onChange={(event) => persistAccessibility('translation', event.target.value)}
+                  disabled={preferenceSaving}
+                  aria-describedby="translation-help"
+                >
+                  <option value="kn">Kannada</option>
+                  <option value="hi">Hindi</option>
+                  <option value="te">Telugu</option>
+                </select>
+                <small id="translation-help">The original English always stays visible.</small>
+              </div>
+            )}
+
+            <p
+              id="accessibility-save-status"
+              className={`accessibility-save-status ${preferenceError ? 'error' : ''}`}
+              role="status"
+              aria-live="polite"
+            >
+              {preferenceError || (
+                preferenceLoading
+                  ? 'Loading your saved mode…'
+                  : preferenceSaving
+                    ? 'Saving your mode…'
+                    : 'Saved for this lecture.'
+              )}
+            </p>
+          </div>
+        </section>
+      )}
+
       {session ? (
         <div className="student-lecture-layout">
           {(notes || notesLoading || notesError) && (
             <LectureNotes notes={notes} loading={notesLoading} error={notesError} />
           )}
 
-          <TranscriptView
-            items={transcript}
-            emptyText="The transcript will appear here as soon as the teacher starts speaking."
-            sessionId={session.session_id}
-            translationLanguage={translationLanguage}
-          />
+          {accessibilityMode === 'simplified' ? (
+            <SimplifiedLectureContent
+              items={transcript}
+              structuredData={structuredData}
+              loading={structuring}
+              error={structureError}
+            />
+          ) : (
+            <TranscriptView
+              items={transcript}
+              emptyText="The transcript will appear here as soon as the teacher starts speaking."
+              sessionId={session.session_id}
+              translationLanguage={translationLanguage}
+              accessibilityMode={accessibilityMode}
+            />
+          )}
 
           <StructuredLectureView
             structuredData={structuredData}

@@ -42,9 +42,25 @@ export function getCurrentUser(token) {
   return request('/auth/me', { token })
 }
 
-export function joinLectureAttendance(sessionId) {
+export function joinLectureAttendance(sessionId, token) {
   return request(`/sessions/${encodeURIComponent(sessionId)}/attendance/join`, {
     method: 'POST',
+    token,
+  })
+}
+
+export function getAccessibilityPreference(sessionId, token) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/accessibility`, { token })
+}
+
+export function saveAccessibilityPreference(sessionId, mode, translationLanguage, token) {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/accessibility`, {
+    method: 'POST',
+    body: JSON.stringify({
+      mode,
+      translation_language: translationLanguage,
+    }),
+    token,
   })
 }
 
@@ -58,6 +74,10 @@ export function leaveLectureAttendance(sessionId, token) {
 
 export function getMyLectures() {
   return request('/my-lectures')
+}
+
+export function getTeacherDashboard(token) {
+  return request('/teacher/dashboard', { token })
 }
 
 export function createLecture(title, token) {

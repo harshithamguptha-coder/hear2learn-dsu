@@ -3,6 +3,8 @@
 import sqlite3
 from datetime import datetime, timezone
 
+from .accessibility_service import DEFAULT_MODE, DEFAULT_TRANSLATION_LANGUAGE
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -48,6 +50,24 @@ def join_lecture(
             left_at = NULL
         """,
         (student_id, session_id, joined_at),
+    )
+    db.execute(
+        """
+        INSERT INTO student_accessibility_preferences (
+            student_id, session_id, mode, translation_language,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(student_id, session_id) DO NOTHING
+        """,
+        (
+            student_id,
+            session_id,
+            DEFAULT_MODE,
+            DEFAULT_TRANSLATION_LANGUAGE,
+            joined_at,
+            joined_at,
+        ),
     )
     db.commit()
     return find_attendance(db, student_id=student_id, session_id=session_id)

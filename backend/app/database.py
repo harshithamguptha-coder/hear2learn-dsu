@@ -138,6 +138,23 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_lecture_attendance_student
             ON lecture_attendance(student_id, joined_at DESC);
+
+            CREATE TABLE IF NOT EXISTS student_accessibility_preferences (
+                student_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'standard'
+                    CHECK (mode IN ('standard', 'simplified', 'translation', 'sign_support')),
+                translation_language TEXT NOT NULL DEFAULT 'kn'
+                    CHECK (translation_language IN ('kn', 'hi', 'te')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (student_id, session_id),
+                FOREIGN KEY (student_id, session_id)
+                    REFERENCES lecture_attendance(student_id, session_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_accessibility_preferences_session
+            ON student_accessibility_preferences(session_id);
             """
 
         )

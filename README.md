@@ -1,10 +1,9 @@
 # Accessible Classroom — MVP foundation
 
 A small classroom app with a teacher lecture flow, a student join flow, a
-live transcript backed by SQLite, optional Kannada/Hindi/Telugu translation, fixed-
-phrase sign representation, and automatic session-scoped lecture notes. It
-intentionally contains no Q&A, speaker detection, or other advanced AI
-features yet.
+live transcript backed by SQLite, optional Kannada/Hindi/Telugu translation,
+fixed-phrase sign representation, automatic session-scoped lecture notes,
+per-Student accessibility modes, and real Teacher lecture analytics.
 
 ## What works
 
@@ -17,6 +16,8 @@ features yet.
 - The Web Speech API converts speech to text through the browser.
 - Finalized text is sent to FastAPI, saved in SQLite, and broadcast with SSE.
 - Students receive the saved transcript first and then live additions.
+- After joining, each Student can save a Standard, Simplified, Translation, or Sign Support view for that lecture. The setting is keyed by that Student and lecture, so classmates can use different modes in the same session.
+- Each Teacher dashboard shows only that Teacher's persisted lectures, attendance, questions, detected topics, and saved Student accessibility modes.
 - Students can request optional Kannada, Hindi, or Telugu translations per segment.
 - Fixed classroom phrases can show local animated sign representations, with the original static SVG as a fallback.
 - Ending a lecture generates notes from only that session's transcript.
@@ -33,12 +34,16 @@ backend/
     auth_api.py              # Register, login, and role protection
     api.py                  # Lecture, transcript, and SSE routes
     attendance_api.py       # Student join/leave and My Lectures routes
+    accessibility_api.py    # Student-only per-session mode settings
+    teacher_analytics_api.py # Teacher-only dashboard analytics
     translation_api.py      # Session-scoped translation endpoint
     notes_api.py            # Session-scoped lecture notes endpoint
     database.py             # SQLite connection and schema
     models.py               # Request/response schemas
     services/
       attendance_service.py # Student attendance and personal history queries
+      accessibility_service.py # Per-Student lecture preference persistence
+      teacher_analytics_service.py # Real Teacher lecture aggregates
       auth_service.py      # Password hashing, users, and signed bearer tokens
       session_service.py   # Session and transcript storage
       notes_service.py     # Deterministic extractive notes generation
@@ -50,7 +55,7 @@ frontend/
   src/
     api/                  # Small API client
     components/           # Shared transcript, translation, and sign UI
-    services/             # Fixed sign-phrase registry and lecture history helpers
+    services/             # Sign, simplified wording, and lecture-history helpers
     hooks/                # Speech recognition and SSE hooks
     pages/                # Teacher and student pages
 ```
@@ -154,6 +159,16 @@ ending the lecture fills `left_at`. The **My Lectures** card shows only the
 logged-in Student's own lecture title, date, attendance duration, Teacher, and
 status. Lecture identifiers remain the existing `session_id` values.
 
+## Teacher dashboard analytics
+
+The authenticated Teacher dashboard aggregates only that Teacher's existing
+`session_id` records. Lecture totals and recent lectures come from `sessions`;
+student counts come from `lecture_attendance`; question counts come from stored
+`user` messages in `conversation_messages`; topics come from the completed
+lecture's stored `lecture_notes.main_topics`; and accessibility usage comes from
+the four saved modes in `student_accessibility_preferences`. Missing values are
+returned as zero or an empty list and rendered as `0`, `0m`, or `No data`.
+
 ## Authentication notes
 
 Accounts are stored in the default SQLite database at `backend/classroom.db`.
@@ -195,3 +210,4 @@ local lecture and transcript data.
 | `GET` | `/api/sessions/{session_id}/events` | Subscribe to live SSE events |
 | `POST` | `/api/sessions/{session_id}/translations` | Translate one English segment |
 | `GET` | `/api/sessions/{session_id}/notes` | Get notes for one ended session |
+| `GET` | `/api/teacher/dashboard` | Read analytics for the logged-in Teacher's own lectures |
